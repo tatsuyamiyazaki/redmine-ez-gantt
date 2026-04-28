@@ -193,6 +193,82 @@
   background: #94a3b8;
 }
 
+.easy-gantt__timeline-toolbar {
+  z-index: 20;
+  border: 1px solid var(--easy-gantt-border);
+  border-bottom: 0;
+  border-radius: 12px 12px 0 0;
+  background: rgba(248, 250, 252, 0.98);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+}
+
+.easy-gantt__timeline-toolbar--fixed {
+  position: fixed;
+  top: 0;
+  z-index: 1000;
+}
+
+.easy-gantt__timeline-date-row {
+  display: none;
+}
+
+.easy-gantt__timeline-toolbar--with-date .easy-gantt__timeline-date-row {
+  display: flex;
+}
+
+.easy-gantt__timeline-date-spacer {
+  flex: 0 0 calc(var(--easy-gantt-left-pane-width) + 8px);
+  border-right: 1px solid var(--easy-gantt-border);
+  border-bottom: 1px solid var(--easy-gantt-border);
+  box-sizing: border-box;
+  background: var(--easy-gantt-header-bg);
+  color: #334155;
+  font-weight: 700;
+  height: var(--easy-gantt-header-height);
+  line-height: var(--easy-gantt-header-height);
+  padding: 0 12px;
+}
+
+.easy-gantt__timeline-date-viewport {
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.easy-gantt__horizontal-scrollbar {
+  display: flex;
+}
+
+.easy-gantt__horizontal-scrollbar-spacer {
+  flex: 0 0 calc(var(--easy-gantt-left-pane-width) + 8px);
+  border-right: 1px solid var(--easy-gantt-border);
+  box-sizing: border-box;
+}
+
+.easy-gantt__horizontal-scrollbar-track {
+  flex: 1 1 auto;
+  overflow-x: scroll;
+  overflow-y: hidden;
+  height: 16px;
+}
+
+.easy-gantt__horizontal-scrollbar-content {
+  height: 1px;
+}
+
+.easy-gantt__horizontal-scrollbar-track::-webkit-scrollbar {
+  height: 10px;
+}
+
+.easy-gantt__horizontal-scrollbar-track::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+.easy-gantt__horizontal-scrollbar-track::-webkit-scrollbar-thumb {
+  border: 2px solid #f1f5f9;
+  border-radius: 999px;
+  background: #64748b;
+}
+
 .easy-gantt__left-header,
 .easy-gantt__date-header {
   height: var(--easy-gantt-header-height);
@@ -212,6 +288,10 @@
 .easy-gantt__date-header {
   display: flex;
   flex-direction: column;
+}
+
+.easy-gantt__date-header--floating {
+  border-bottom: 1px solid var(--easy-gantt-border);
 }
 
 .easy-gantt__month-row,

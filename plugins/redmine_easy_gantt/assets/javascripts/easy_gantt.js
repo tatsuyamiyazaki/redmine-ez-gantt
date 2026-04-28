@@ -16,7 +16,8 @@
     progressSaveSeq: 0,
     leftPaneWidth: LEFT_PANE_WIDTH,
     leftPaneCollapsed: false,
-    flash: null
+    flash: null,
+    horizontalScrollbarPositionUpdate: null
   };
 
   function parseDate(value) {
@@ -317,6 +318,8 @@
         leftPane.style.width = state.leftPaneWidth + "px";
         leftPane.style.flexBasis = state.leftPaneWidth + "px";
       }
+      updateHorizontalScrollbarSpacer();
+      updateHorizontalScrollbarPosition();
     });
 
     function endDrag(event) {
@@ -330,6 +333,119 @@
 
     handle.addEventListener("pointerup", endDrag);
     handle.addEventListener("pointercancel", endDrag);
+  }
+
+  function updateHorizontalScrollbarSpacer() {
+    var spacers = state.root && state.root.querySelectorAll(".easy-gantt__timeline-spacer");
+
+    if (!spacers) {
+      return;
+    }
+
+    spacers.forEach(function (spacer) {
+      if (state.leftPaneCollapsed) {
+        spacer.style.display = "none";
+        spacer.style.flexBasis = "0";
+        spacer.style.width = "0";
+        return;
+      }
+
+      spacer.style.display = "";
+      spacer.style.flexBasis = state.leftPaneWidth + 8 + "px";
+      spacer.style.width = state.leftPaneWidth + 8 + "px";
+    });
+  }
+
+  function attachTimelineScrollSync(rightPane, scrollbar, dateViewport) {
+    var syncing = false;
+
+    function syncScroll(source) {
+      if (syncing) {
+        return;
+      }
+
+      syncing = true;
+      rightPane.scrollLeft = source.scrollLeft;
+      scrollbar.scrollLeft = source.scrollLeft;
+      dateViewport.scrollLeft = source.scrollLeft;
+      window.requestAnimationFrame(function () {
+        syncing = false;
+      });
+    }
+
+    rightPane.addEventListener("scroll", function () {
+      syncScroll(rightPane);
+    });
+
+    scrollbar.addEventListener("scroll", function () {
+      syncScroll(scrollbar);
+    });
+  }
+
+  function renderTimelineToolbar(range, chartWidth, rightPane) {
+    var toolbar = createElement("div", "easy-gantt__timeline-toolbar");
+    var dateRow = createElement("div", "easy-gantt__timeline-date-row");
+    var dateSpacer = createElement("div", "easy-gantt__timeline-spacer easy-gantt__timeline-date-spacer", "Issues");
+    var dateViewport = createElement("div", "easy-gantt__timeline-date-viewport");
+    var dateHeader = renderHeader(range);
+    var scrollbar = createElement("div", "easy-gantt__horizontal-scrollbar");
+    var spacer = createElement("div", "easy-gantt__timeline-spacer easy-gantt__horizontal-scrollbar-spacer");
+    var scroller = createElement("div", "easy-gantt__horizontal-scrollbar-track");
+    var content = createElement("div", "easy-gantt__horizontal-scrollbar-content");
+
+    dateHeader.classList.add("easy-gantt__date-header--floating");
+    dateViewport.appendChild(dateHeader);
+    dateRow.appendChild(dateSpacer);
+    dateRow.appendChild(dateViewport);
+
+    content.style.width = chartWidth + "px";
+    scroller.appendChild(content);
+    scrollbar.appendChild(spacer);
+    scrollbar.appendChild(scroller);
+    toolbar.appendChild(dateRow);
+    toolbar.appendChild(scrollbar);
+    updateHorizontalScrollbarSpacer();
+    attachTimelineScrollSync(rightPane, scroller, dateViewport);
+
+    return toolbar;
+  }
+
+  function updateHorizontalScrollbarPosition() {
+    if (state.horizontalScrollbarPositionUpdate) {
+      state.horizontalScrollbarPositionUpdate();
+    }
+  }
+
+  function attachHorizontalScrollbarPosition(toolbar) {
+    var root = state.root;
+    var originalHeader = root.querySelector(".easy-gantt__right-pane > .easy-gantt__date-header");
+
+    if (state.horizontalScrollbarPositionUpdate) {
+      window.removeEventListener("scroll", state.horizontalScrollbarPositionUpdate);
+      window.removeEventListener("resize", state.horizontalScrollbarPositionUpdate);
+    }
+
+    state.horizontalScrollbarPositionUpdate = function () {
+      var rootRect = root.getBoundingClientRect();
+      var headerRect = originalHeader && originalHeader.getBoundingClientRect();
+      var shouldFloat = headerRect && headerRect.bottom <= 0 && rootRect.bottom > toolbar.offsetHeight;
+
+      toolbar.classList.toggle("easy-gantt__timeline-toolbar--fixed", shouldFloat);
+      toolbar.classList.toggle("easy-gantt__timeline-toolbar--with-date", shouldFloat);
+
+      if (!shouldFloat) {
+        toolbar.style.left = "";
+        toolbar.style.width = "";
+        return;
+      }
+
+      toolbar.style.left = rootRect.left + "px";
+      toolbar.style.width = rootRect.width + "px";
+    };
+
+    window.addEventListener("scroll", state.horizontalScrollbarPositionUpdate);
+    window.addEventListener("resize", state.horizontalScrollbarPositionUpdate);
+    state.horizontalScrollbarPositionUpdate();
   }
 
   function setBarStatus(issueId, className, clearDelay) {
@@ -1119,6 +1235,7 @@
     var resizer;
     var chartBody;
     var leftRows;
+    var chartWidth;
 
     if (!state.issues.length) {
       renderEmpty();
@@ -1152,7 +1269,8 @@
       attachLeftPaneResize(resizer);
     }
 
-    chartBody.style.width = range.days * DAY_WIDTH + "px";
+    chartWidth = range.days * DAY_WIDTH;
+    chartBody.style.width = chartWidth + "px";
     chartBody.style.height = displayIssues.length * ROW_HEIGHT + "px";
     chartBody.appendChild(renderChartRows(displayIssues, range, meta));
     chartBody.appendChild(renderTodayLine(range, displayIssues.length));
@@ -1170,7 +1288,10 @@
     state.root.appendChild(flash);
     state.root.appendChild(renderToolbar());
     state.root.appendChild(rootDropZone);
+    state.root.appendChild(renderTimelineToolbar(range, chartWidth, rightPane));
     state.root.appendChild(shell);
+    updateHorizontalScrollbarSpacer();
+    attachHorizontalScrollbarPosition(state.root.querySelector(".easy-gantt__timeline-toolbar"));
 
     if (state.flash) {
       showFlashMessage(state.flash.type, state.flash.message);
