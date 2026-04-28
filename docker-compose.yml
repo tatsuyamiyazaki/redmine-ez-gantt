@@ -1,0 +1,40 @@
+services:
+  redmine:
+    image: redmine:6.0
+    container_name: redmine-easy-gantt-redmine
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      REDMINE_DB_POSTGRES: db
+      REDMINE_DB_DATABASE: redmine
+      REDMINE_DB_USERNAME: redmine
+      REDMINE_DB_PASSWORD: redmine
+      REDMINE_SECRET_KEY_BASE: development-secret-key-base
+      REDMINE_NO_DB_MIGRATE: "true"
+    volumes:
+      - ./docker/redmine:/usr/src/redmine/docker/redmine
+      - ./plugins/redmine_easy_gantt:/usr/src/redmine/plugins/redmine_easy_gantt
+      - redmine_files:/usr/src/redmine/files
+    command: ["bundle", "exec", "bash", "/usr/src/redmine/docker/redmine/entrypoint.sh"]
+
+  db:
+    image: postgres:16
+    container_name: redmine-easy-gantt-db
+    environment:
+      POSTGRES_DB: redmine
+      POSTGRES_USER: redmine
+      POSTGRES_PASSWORD: redmine
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U redmine -d redmine"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  postgres_data:
+  redmine_files:
