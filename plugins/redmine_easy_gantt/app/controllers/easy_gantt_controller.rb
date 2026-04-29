@@ -10,7 +10,7 @@ class EasyGanttController < ApplicationController
   def issues
     issues = Issue.visible
                   .where(project_id: @project.self_and_descendants.select(:id))
-                  .includes(:status, :assigned_to, :tracker, :parent)
+                  .includes(:status, :assigned_to, :tracker, :parent, :project)
                   .order(:start_date, :id)
 
     render json: issues.map { |issue| EasyGanttIssuePresenter.new(issue).as_json }
@@ -67,7 +67,7 @@ class EasyGanttController < ApplicationController
   private
 
   def find_visible_issue
-    @issue = Issue.visible.includes(:status, :assigned_to, :tracker, :parent).find(params[:id])
+    @issue = Issue.visible.includes(:status, :assigned_to, :tracker, :parent, :project).find(params[:id])
   end
 
   def authorize_issue_update

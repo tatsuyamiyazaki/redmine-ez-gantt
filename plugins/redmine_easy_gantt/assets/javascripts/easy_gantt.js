@@ -17,7 +17,11 @@
     leftPaneWidth: LEFT_PANE_WIDTH,
     leftPaneCollapsed: false,
     flash: null,
-    horizontalScrollbarPositionUpdate: null
+    horizontalScrollbarPositionUpdate: null,
+    statuses: [],
+    trackers: [],
+    filterStatusId: null,
+    filterTrackerId: null
   };
 
   function parseDate(value) {
@@ -265,13 +269,56 @@
     element.textContent = message || "";
   }
 
+  function applyFilters(issues) {
+    return issues.filter(function (issue) {
+      if (state.filterStatusId !== null) {
+        var statusId = issue.status ? issue.status.id : null;
+        if (statusId !== state.filterStatusId) { return false; }
+      }
+      if (state.filterTrackerId !== null) {
+        var trackerId = issue.tracker ? issue.tracker.id : null;
+        if (trackerId !== state.filterTrackerId) { return false; }
+      }
+      return true;
+    });
+  }
+
   function toggleLeftPane() {
     state.leftPaneCollapsed = !state.leftPaneCollapsed;
     renderGantt();
   }
 
+  function renderFilterSelect(labelText, items, currentValue, onChange) {
+    var group = createElement("div", "easy-gantt__filter-group");
+    var labelEl = createElement("label", "easy-gantt__filter-label", labelText);
+    var select = createElement("select", "easy-gantt__filter-select");
+    var allOption = createElement("option", null, "すべて");
+
+    allOption.value = "";
+    select.appendChild(allOption);
+
+    items.forEach(function (item) {
+      var option = createElement("option", null, item.name);
+      option.value = String(item.id);
+      if (currentValue === item.id) {
+        option.selected = true;
+      }
+      select.appendChild(option);
+    });
+
+    select.addEventListener("change", function () {
+      onChange(select.value ? Number(select.value) : null);
+    });
+
+    group.appendChild(labelEl);
+    group.appendChild(select);
+    return group;
+  }
+
   function renderToolbar() {
     var toolbar = createElement("div", "easy-gantt__toolbar");
+    var controls = createElement("div", "easy-gantt__toolbar-controls");
+    var filterBar = createElement("div", "easy-gantt__filter-bar");
     var toggleButton = createElement(
       "button",
       "easy-gantt__toolbar-button",
@@ -280,8 +327,28 @@
 
     toggleButton.type = "button";
     toggleButton.addEventListener("click", toggleLeftPane);
-    toolbar.appendChild(toggleButton);
+    controls.appendChild(toggleButton);
 
+    if (state.statuses.length > 0) {
+      filterBar.appendChild(renderFilterSelect(
+        "ステータス:",
+        state.statuses,
+        state.filterStatusId,
+        function (value) { state.filterStatusId = value; renderGantt(); }
+      ));
+    }
+
+    if (state.trackers.length > 0) {
+      filterBar.appendChild(renderFilterSelect(
+        "トラッカー:",
+        state.trackers,
+        state.filterTrackerId,
+        function (value) { state.filterTrackerId = value; renderGantt(); }
+      ));
+    }
+
+    toolbar.appendChild(controls);
+    toolbar.appendChild(filterBar);
     return toolbar;
   }
 
@@ -901,12 +968,46 @@
     });
   }
 
+  function renderProjectRow(project) {
+    var row = createElement("div", "easy-gantt__project-row");
+    var title = createElement("div", "easy-gantt__project-title");
+    var name = createElement("span", "easy-gantt__project-name", project ? project.name || "" : "");
+
+    row.style.height = ROW_HEIGHT + "px";
+    title.style.paddingLeft = "8px";
+    title.appendChild(name);
+    row.appendChild(title);
+    return row;
+  }
+
+  function buildDisplayEntries(issues) {
+    var ordered = orderedIssues(issues);
+    var entries = [];
+    var seenProjectIds = {};
+
+    ordered.forEach(function (issue) {
+      var projectId = issue.project_id;
+      if (!seenProjectIds[projectId]) {
+        seenProjectIds[projectId] = true;
+        entries.push({ type: "project", project: issue.project });
+      }
+      entries.push({ type: "issue", issue: issue });
+    });
+
+    return entries;
+  }
+
   function renderIssueRow(issue, meta) {
     var row = createElement("div", "easy-gantt__issue-row");
     var title = createElement("div", "easy-gantt__issue-title");
     var id = createElement("span", "easy-gantt__issue-id", "#" + issue.id);
-    var subject = createElement("span", "easy-gantt__issue-subject", issue.subject);
+    var subject = createElement("a", "easy-gantt__issue-subject", issue.subject);
     var tracker = createElement("span", "easy-gantt__issue-tracker", namedValue(issue.tracker));
+
+    subject.href = issue.editable ? "/issues/" + issue.id + "/edit" : "/issues/" + issue.id;
+    subject.addEventListener("click", function (event) {
+      event.stopPropagation();
+    });
     var progressControl = createElement("label", "easy-gantt__progress-control");
     var progressInput = createElement("input", "easy-gantt__progress-input");
     var progressSuffix = createElement("span", "easy-gantt__progress-suffix", "%");
@@ -945,7 +1046,7 @@
 
     attachIssueRowDropHandlers(row, issue);
 
-    title.style.paddingLeft = 8 + issueDepth(issue, meta.byId) * 18 + "px";
+    title.style.paddingLeft = 8 + (issueDepth(issue, meta.byId) + 1) * 18 + "px";
     title.appendChild(id);
     title.appendChild(subject);
     if (tracker.textContent) {
@@ -1191,17 +1292,21 @@
     return bar;
   }
 
-  function renderChartRows(displayIssues, range, meta) {
+  function renderChartRows(entries, range, meta) {
     var rows = createElement("div", "easy-gantt__chart-rows");
     rows.style.width = range.days * DAY_WIDTH + "px";
 
-    displayIssues.forEach(function (issue) {
+    entries.forEach(function (entry) {
       var row = createElement("div", "easy-gantt__bar-row");
-      var bar = renderGanttBar(issue, range, meta);
-
       row.style.height = ROW_HEIGHT + "px";
-      if (bar) {
-        row.appendChild(bar);
+
+      if (entry.type === "issue") {
+        var bar = renderGanttBar(entry.issue, range, meta);
+        if (bar) {
+          row.appendChild(bar);
+        }
+      } else {
+        row.classList.add("easy-gantt__bar-row--project");
       }
 
       rows.appendChild(row);
@@ -1243,7 +1348,7 @@
     }
 
     meta = buildIssueMeta(state.issues);
-    displayIssues = orderedIssues(state.issues);
+    displayIssues = buildDisplayEntries(applyFilters(state.issues));
     range = dateRange(state.issues);
     flash = createElement("div", "easy-gantt-flash");
     rootDropZone = renderRootDropZone();
@@ -1255,8 +1360,12 @@
     chartBody = createElement("div", "easy-gantt__chart-body");
     leftRows = document.createDocumentFragment();
 
-    displayIssues.forEach(function (issue) {
-      leftRows.appendChild(renderIssueRow(issue, meta));
+    displayIssues.forEach(function (entry) {
+      if (entry.type === "project") {
+        leftRows.appendChild(renderProjectRow(entry.project));
+      } else {
+        leftRows.appendChild(renderIssueRow(entry.issue, meta));
+      }
     });
 
     shell.classList.toggle("easy-gantt__shell--left-collapsed", state.leftPaneCollapsed);
@@ -1306,6 +1415,8 @@
   function init(root) {
     var issuesUrl = root.dataset.issuesUrl;
     state.root = root;
+    state.statuses = JSON.parse(root.dataset.statuses || "[]");
+    state.trackers = JSON.parse(root.dataset.trackers || "[]");
 
     fetch(issuesUrl, {
       credentials: "same-origin",
