@@ -1,6 +1,6 @@
-Redmine::Plugin.register :redmine_easy_gantt do
+Redmine::Plugin.register :redmine_ez_gantt do
   name 'Easy Gantt'
-  author 'redmine-easy-gantt'
+  author 'redmine-ez-gantt'
   description 'A project Gantt chart plugin for Redmine.'
   version '0.0.1'
   requires_redmine version_or_higher: '6.0.0'

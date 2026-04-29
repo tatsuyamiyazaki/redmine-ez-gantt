@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 開発環境の起動と運用
 
-このリポジトリは Redmine 6 用プラグイン `redmine_easy_gantt` の開発環境であり、Redmine 本体や Gemfile は同梱しない。Rails / Ruby は `redmine:6.0` イメージのものをそのまま利用する想定なので、ローカルに Ruby を入れる必要はない。
+このリポジトリは Redmine 6 用プラグイン `redmine_ez_gantt` の開発環境であり、Redmine 本体や Gemfile は同梱しない。Rails / Ruby は `redmine:6.0` イメージのものをそのまま利用する想定なので、ローカルに Ruby を入れる必要はない。
 
 ```sh
 docker compose up         # 通常起動。DB 永続化、プラグインソースは bind mount
@@ -22,7 +22,7 @@ docker compose logs -f redmine   # Rails ログ
 5. `rails runner docker/redmine/seed_easy_gantt.rb` でテストデータ投入
 6. `rails server -e production`
 
-そのため初回や `down -v` 直後の起動は数分かかる。プラグインのソース (`plugins/redmine_easy_gantt`) と entrypoint (`docker/redmine`) はホストから bind mount されているので、Ruby/ERB/JS/CSS の変更は通常コンテナ再起動 (`docker compose restart redmine`) で反映できるが、CSS/JS は production モードでプリコンパイル済みアセットを参照しているため、意図通り反映されない場合は `docker compose up` で再起動して assets:precompile を走らせ直すか、コンテナ内で `bundle exec rake assets:precompile RAILS_ENV=production` を再実行する。
+そのため初回や `down -v` 直後の起動は数分かかる。プラグインのソース (`plugins/redmine_ez_gantt`) と entrypoint (`docker/redmine`) はホストから bind mount されているので、Ruby/ERB/JS/CSS の変更は通常コンテナ再起動 (`docker compose restart redmine`) で反映できるが、CSS/JS は production モードでプリコンパイル済みアセットを参照しているため、意図通り反映されない場合は `docker compose up` で再起動して assets:precompile を走らせ直すか、コンテナ内で `bundle exec rake assets:precompile RAILS_ENV=production` を再実行する。
 
 ログイン情報:
 - 管理者: `admin` / `admin`
@@ -41,7 +41,7 @@ docker compose logs -f redmine   # Rails ログ
 
 このプラグインはサーバー側を極小に保ち、ガントチャートの描画・編集はすべてクライアント JS に寄せた構成になっている。
 
-### Rails 側 (`plugins/redmine_easy_gantt`)
+### Rails 側 (`plugins/redmine_ez_gantt`)
 
 - `init.rb` で `project_module :easy_gantt` を定義し、`view_easy_gantt` / `edit_easy_gantt` の 2 権限とプロジェクトメニュー (標準ガント `gantt` の直後) を登録する。プロジェクトでこのモジュールを有効にしないとメニューに出ない。
 - `config/routes.rb` のエンドポイントは 4 本だけ:
@@ -73,4 +73,4 @@ docker compose logs -f redmine   # Rails ログ
 
 - `down -v` はテストデータと添付ファイルを丸ごと消す。共有環境で安易に提案しないこと。
 - 起動直後はデフォルトデータ + 500 チケットの seed が走るため、初回ログイン可能になるまで時間がかかる。CI 的に使うときは `REDMINE_NO_DB_MIGRATE=true` が docker-compose.yml で立っているのは Redmine イメージ標準の自動マイグレーションを抑止して、自前 entrypoint に処理を集約しているためで、勝手に外さない。
-- テストフレームワークは未導入。プラグインの単体テスト/RSpec を追加する場合は Redmine 本体の test 構成 (`test/` 配下に `*_test.rb`、`bundle exec rake redmine:plugins:test NAME=redmine_easy_gantt`) との整合を取る前提で計画する。
+- テストフレームワークは未導入。プラグインの単体テスト/RSpec を追加する場合は Redmine 本体の test 構成 (`test/` 配下に `*_test.rb`、`bundle exec rake redmine:plugins:test NAME=redmine_ez_gantt`) との整合を取る前提で計画する。

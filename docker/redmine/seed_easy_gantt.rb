@@ -1,6 +1,6 @@
 root_project = Project.find_or_initialize_by(identifier: 'easy-gantt-test')
 root_project.name = 'Easy Gantt Test'
-root_project.description = 'Root project for redmine_easy_gantt test data.'
+root_project.description = 'Root project for redmine_ez_gantt test data.'
 root_project.is_public = false
 root_project.status = Project::STATUS_ACTIVE if defined?(Project::STATUS_ACTIVE)
 root_project.save!
@@ -58,7 +58,7 @@ subproject_definitions = [
 subprojects = subproject_definitions.map do |info|
   sp = Project.find_or_initialize_by(identifier: info[:identifier])
   sp.name = info[:name]
-  sp.description = "Sub project (#{info[:name]}) for redmine_easy_gantt test data."
+  sp.description = "Sub project (#{info[:name]}) for redmine_ez_gantt test data."
   sp.is_public = false
   sp.status = Project::STATUS_ACTIVE if defined?(Project::STATUS_ACTIVE)
   sp.save!

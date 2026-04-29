@@ -1,7 +1,7 @@
 services:
   redmine:
     image: redmine:6.0
-    container_name: redmine-easy-gantt-redmine
+    container_name: redmine-ez-gantt-redmine
     depends_on:
       db:
         condition: service_healthy
@@ -16,13 +16,13 @@ services:
       REDMINE_NO_DB_MIGRATE: "true"
     volumes:
       - ./docker/redmine:/usr/src/redmine/docker/redmine
-      - ./plugins/redmine_easy_gantt:/usr/src/redmine/plugins/redmine_easy_gantt
+      - ./plugins/redmine_ez_gantt:/usr/src/redmine/plugins/redmine_ez_gantt
       - redmine_files:/usr/src/redmine/files
     command: ["bundle", "exec", "bash", "/usr/src/redmine/docker/redmine/entrypoint.sh"]
 
   db:
     image: postgres:16
-    container_name: redmine-easy-gantt-db
+    container_name: redmine-ez-gantt-db
     environment:
       POSTGRES_DB: redmine
       POSTGRES_USER: redmine
