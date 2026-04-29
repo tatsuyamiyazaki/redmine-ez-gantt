@@ -21,7 +21,9 @@
     statuses: [],
     trackers: [],
     filterStatusId: null,
-    filterTrackerId: null
+    filterTrackerId: null,
+    showProgressLine: false,
+    showCriticalPath: false
   };
 
   function parseDate(value) {
@@ -288,6 +290,14 @@
     renderGantt();
   }
 
+  function renderToggleButton(label, active, onClick) {
+    var btn = createElement("button", "easy-gantt__toolbar-button", label);
+    btn.type = "button";
+    if (active) { btn.classList.add("easy-gantt__toolbar-button--active"); }
+    btn.addEventListener("click", onClick);
+    return btn;
+  }
+
   function renderFilterSelect(labelText, items, currentValue, onChange) {
     var group = createElement("div", "easy-gantt__filter-group");
     var labelEl = createElement("label", "easy-gantt__filter-label", labelText);
@@ -327,6 +337,14 @@
 
     toggleButton.type = "button";
     toggleButton.addEventListener("click", toggleLeftPane);
+    controls.appendChild(renderToggleButton("イナズマ線", state.showProgressLine, function () {
+      state.showProgressLine = !state.showProgressLine;
+      renderGantt();
+    }));
+    controls.appendChild(renderToggleButton("クリティカルパス", state.showCriticalPath, function () {
+      state.showCriticalPath = !state.showCriticalPath;
+      renderGantt();
+    }));
     controls.appendChild(toggleButton);
 
     if (state.statuses.length > 0) {
@@ -1230,7 +1248,7 @@
     bar.addEventListener("pointercancel", endDrag);
   }
 
-  function renderGanttBar(issue, range, meta) {
+  function renderGanttBar(issue, range, meta, criticalIds) {
     var geometry = barGeometry(issue, range);
     var isParent = !!meta.childrenByParentId[issue.id];
     var bar;
@@ -1267,6 +1285,10 @@
       bar.classList.add("easy-gantt__bar--overdue");
     }
 
+    if (criticalIds && criticalIds.has(issue.id)) {
+      bar.classList.add("easy-gantt__bar--critical");
+    }
+
     if (state.pendingSaves.has(issue.id) || state.pendingProgressSaves.has(issue.id)) {
       bar.classList.add("is-saving");
     }
@@ -1292,7 +1314,7 @@
     return bar;
   }
 
-  function renderChartRows(entries, range, meta) {
+  function renderChartRows(entries, range, meta, criticalIds) {
     var rows = createElement("div", "easy-gantt__chart-rows");
     rows.style.width = range.days * DAY_WIDTH + "px";
 
@@ -1301,7 +1323,7 @@
       row.style.height = ROW_HEIGHT + "px";
 
       if (entry.type === "issue") {
-        var bar = renderGanttBar(entry.issue, range, meta);
+        var bar = renderGanttBar(entry.issue, range, meta, criticalIds);
         if (bar) {
           row.appendChild(bar);
         }
@@ -1327,8 +1349,107 @@
     state.root.appendChild(createElement("div", "easy-gantt__empty", "No issues to display."));
   }
 
+  function computeCriticalPath(issues) {
+    var meta = buildIssueMeta(issues);
+    var criticalIds = new Set();
+
+    function latestDueDate(issueId) {
+      var children = meta.childrenByParentId[issueId] || [];
+      var own = meta.byId[issueId] ? meta.byId[issueId].due_date : null;
+      if (children.length === 0) { return own; }
+      var latest = own;
+      children.forEach(function (childId) {
+        var d = latestDueDate(childId);
+        if (d && (!latest || d > latest)) { latest = d; }
+      });
+      return latest;
+    }
+
+    function markCriticalChain(issueId) {
+      criticalIds.add(issueId);
+      var children = meta.childrenByParentId[issueId] || [];
+      if (children.length === 0) { return; }
+      var criticalChildId = null;
+      var latestDate = null;
+      children.forEach(function (childId) {
+        var d = latestDueDate(childId);
+        if (d && (!latestDate || d > latestDate)) { latestDate = d; criticalChildId = childId; }
+      });
+      if (criticalChildId !== null) { markCriticalChain(criticalChildId); }
+    }
+
+    var roots = issues.filter(function (issue) {
+      return !issue.parent_issue_id || !meta.byId[issue.parent_issue_id];
+    });
+
+    var globalLatest = null;
+    roots.forEach(function (root) {
+      var d = latestDueDate(root.id);
+      if (d && (!globalLatest || d > globalLatest)) { globalLatest = d; }
+    });
+
+    roots.forEach(function (root) {
+      if (latestDueDate(root.id) === globalLatest) { markCriticalChain(root.id); }
+    });
+
+    return criticalIds;
+  }
+
+  function renderProgressLine(entries, range) {
+    var ns = "http://www.w3.org/2000/svg";
+    var todayX = daysBetween(range.start, range.today) * DAY_WIDTH + DAY_WIDTH / 2;
+    var svg = document.createElementNS(ns, "svg");
+    var points = [];
+
+    svg.setAttribute("class", "easy-gantt__progress-line");
+    svg.setAttribute("width", range.days * DAY_WIDTH);
+    svg.setAttribute("height", entries.length * ROW_HEIGHT);
+
+    entries.forEach(function (entry, rowIndex) {
+      if (entry.type !== "issue") { return; }
+      var issue = entry.issue;
+      if (!issue.start_date || !issue.due_date) { return; }
+
+      var startDate = parseDate(issue.start_date);
+      var dueDate = parseDate(issue.due_date);
+      var duration = daysBetween(startDate, dueDate);
+      if (duration <= 0) { return; }
+
+      var progressX = daysBetween(range.start, addDays(startDate, Math.round(duration * doneRatio(issue) / 100))) * DAY_WIDTH + DAY_WIDTH / 2;
+      var progressY = rowIndex * ROW_HEIGHT + ROW_HEIGHT / 2;
+      var isBehind = doneRatio(issue) < 100 && progressX < todayX;
+
+      points.push({ x: progressX, y: progressY, behind: isBehind });
+    });
+
+    if (points.length < 2) { return svg; }
+
+    var polyline = document.createElementNS(ns, "polyline");
+    polyline.setAttribute("points", points.map(function (p) { return p.x + "," + p.y; }).join(" "));
+    polyline.setAttribute("fill", "none");
+    polyline.setAttribute("stroke", "#f59e0b");
+    polyline.setAttribute("stroke-width", "2");
+    polyline.setAttribute("stroke-linejoin", "round");
+    svg.appendChild(polyline);
+
+    points.forEach(function (p) {
+      var circle = document.createElementNS(ns, "circle");
+      circle.setAttribute("cx", p.x);
+      circle.setAttribute("cy", p.y);
+      circle.setAttribute("r", "4");
+      circle.setAttribute("fill", p.behind ? "#dc2626" : "#22c55e");
+      circle.setAttribute("stroke", "#ffffff");
+      circle.setAttribute("stroke-width", "1.5");
+      svg.appendChild(circle);
+    });
+
+    return svg;
+  }
+
   function renderGantt() {
     var meta;
+    var filteredIssues;
+    var criticalIds;
     var displayIssues;
     var range;
     var flash;
@@ -1348,7 +1469,9 @@
     }
 
     meta = buildIssueMeta(state.issues);
-    displayIssues = buildDisplayEntries(applyFilters(state.issues));
+    filteredIssues = applyFilters(state.issues);
+    criticalIds = state.showCriticalPath ? computeCriticalPath(filteredIssues) : new Set();
+    displayIssues = buildDisplayEntries(filteredIssues);
     range = dateRange(state.issues);
     flash = createElement("div", "easy-gantt-flash");
     rootDropZone = renderRootDropZone();
@@ -1381,8 +1504,11 @@
     chartWidth = range.days * DAY_WIDTH;
     chartBody.style.width = chartWidth + "px";
     chartBody.style.height = displayIssues.length * ROW_HEIGHT + "px";
-    chartBody.appendChild(renderChartRows(displayIssues, range, meta));
+    chartBody.appendChild(renderChartRows(displayIssues, range, meta, criticalIds));
     chartBody.appendChild(renderTodayLine(range, displayIssues.length));
+    if (state.showProgressLine) {
+      chartBody.appendChild(renderProgressLine(displayIssues, range));
+    }
 
     rightPane.appendChild(renderHeader(range));
     rightPane.appendChild(chartBody);
