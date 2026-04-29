@@ -90,6 +90,14 @@ end
   end
 end
 
+all_project_ids = [root_project.id, *subprojects.map { |sp| sp[:project].id }]
+existing_issue_ids = Issue.where(project_id: all_project_ids).pluck(:id)
+if existing_issue_ids.any?
+  IssueRelation.where(issue_from_id: existing_issue_ids)
+               .or(IssueRelation.where(issue_to_id: existing_issue_ids))
+               .delete_all
+end
+
 priority =
   IssuePriority.default ||
   IssuePriority.first ||
@@ -108,7 +116,7 @@ def seed_issue(project:, tracker:, status:, priority:, author:, assigned_to:, su
   issue.parent_issue_id = parent&.id
   issue.notify = false if issue.respond_to?(:notify=)
   issue.send_notification = false if issue.respond_to?(:send_notification=)
-  issue.save!
+  issue.save!(validate: false)
   issue
 end
 

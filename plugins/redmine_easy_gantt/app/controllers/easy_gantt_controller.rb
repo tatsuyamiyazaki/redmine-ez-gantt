@@ -1,6 +1,6 @@
 class EasyGanttController < ApplicationController
-  before_action :find_project_by_project_id, only: [:index, :issues]
-  before_action :authorize, only: [:index, :issues]
+  before_action :find_project_by_project_id, only: [:index, :issues, :relations]
+  before_action :authorize, only: [:index, :issues, :relations]
   before_action :find_visible_issue, only: [:update_issue, :update_issue_parent]
   before_action :authorize_issue_update, only: [:update_issue, :update_issue_parent]
 
@@ -11,9 +11,26 @@ class EasyGanttController < ApplicationController
     issues = Issue.visible
                   .where(project_id: @project.self_and_descendants.select(:id))
                   .includes(:status, :assigned_to, :tracker, :parent, :project)
-                  .order(:start_date, :id)
+                  .references(:project)
+                  .order('projects.lft, issues.start_date, issues.id')
 
     render json: issues.map { |issue| EasyGanttIssuePresenter.new(issue).as_json }
+  end
+
+  def relations
+    issue_ids = Issue.visible
+                     .where(project_id: @project.self_and_descendants.select(:id))
+                     .select(:id)
+
+    rels = IssueRelation.where(
+      relation_type: IssueRelation::TYPE_PRECEDES,
+      issue_from_id: issue_ids,
+      issue_to_id: issue_ids
+    )
+
+    render json: rels.map { |r|
+      { id: r.id, from_id: r.issue_from_id, to_id: r.issue_to_id, delay: r.delay.to_i }
+    }
   end
 
   def update_issue
@@ -41,7 +58,12 @@ class EasyGanttController < ApplicationController
     @issue.due_date = due_date if attributes.key?(:due_date)
 
     if @issue.save
-      render json: { success: true, issue: EasyGanttIssuePresenter.new(@issue).as_json }
+      affected = cascade_successors(@issue)
+      render json: {
+        success: true,
+        issue: EasyGanttIssuePresenter.new(@issue).as_json,
+        affected_issues: affected.map { |i| EasyGanttIssuePresenter.new(i).as_json }
+      }
     else
       render json: { success: false, errors: @issue.errors.full_messages }, status: :unprocessable_entity
     end
@@ -62,6 +84,61 @@ class EasyGanttController < ApplicationController
     else
       render json: { success: false, errors: @issue.errors.full_messages }, status: :unprocessable_entity
     end
+  end
+
+  def create_relation
+    from_issue = Issue.visible.find(params[:from_id])
+    to_issue   = Issue.visible.find(params[:to_id])
+
+    unless User.current.allowed_to?(:edit_easy_gantt, from_issue.project)
+      render json: { success: false, errors: ['Not authorized'] }, status: :forbidden
+      return
+    end
+
+    if from_issue.id == to_issue.id
+      render json: { success: false, errors: ['An issue cannot depend on itself'] }, status: :unprocessable_entity
+      return
+    end
+
+    relation = IssueRelation.new(
+      issue_from_id: from_issue.id,
+      issue_to_id: to_issue.id,
+      relation_type: IssueRelation::TYPE_PRECEDES,
+      delay: 0
+    )
+
+    if relation.save
+      affected = cascade_successors(from_issue)
+      render json: {
+        success: true,
+        relation: { id: relation.id, from_id: relation.issue_from_id, to_id: relation.issue_to_id, delay: relation.delay.to_i },
+        affected_issues: affected.map { |i| EasyGanttIssuePresenter.new(i).as_json }
+      }
+    else
+      render json: { success: false, errors: relation.errors.full_messages }, status: :unprocessable_entity
+    end
+  end
+
+  def delete_relation
+    issue_ids = Issue.visible.select(:id)
+    relation = IssueRelation.where(
+      id: params[:id],
+      relation_type: IssueRelation::TYPE_PRECEDES,
+      issue_from_id: issue_ids
+    ).includes(:issue_from).first
+
+    if relation.nil?
+      render json: { success: false, errors: ['Not found'] }, status: :not_found
+      return
+    end
+
+    unless User.current.allowed_to?(:edit_easy_gantt, relation.issue_from.project)
+      render json: { success: false, errors: ['Not authorized'] }, status: :forbidden
+      return
+    end
+
+    relation.destroy
+    render json: { success: true }
   end
 
   private
@@ -105,6 +182,32 @@ class EasyGanttController < ApplicationController
     end
 
     ids
+  end
+
+  def cascade_successors(issue, visited = Set.new)
+    return [] if visited.include?(issue.id)
+    visited.add(issue.id)
+
+    affected = []
+
+    IssueRelation.where(
+      issue_from_id: issue.id,
+      relation_type: IssueRelation::TYPE_PRECEDES
+    ).includes(:issue_to).each do |relation|
+      successor = relation.issue_to
+      next unless successor.start_date && successor.due_date && issue.due_date
+
+      delay = relation.delay.to_i
+      min_start = issue.due_date + delay + 1
+      next if successor.start_date >= min_start
+
+      duration = (successor.due_date - successor.start_date).to_i
+      successor.update_columns(start_date: min_start, due_date: min_start + duration)
+      affected << successor
+      affected.concat(cascade_successors(successor, visited))
+    end
+
+    affected
   end
 
   def parse_date(value)

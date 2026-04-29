@@ -23,7 +23,9 @@
     filterStatusId: null,
     filterTrackerId: null,
     showProgressLine: false,
-    showCriticalPath: false
+    showCriticalPath: false,
+    relations: [],
+    dependencyDrag: null
   };
 
   function parseDate(value) {
@@ -735,7 +737,8 @@
 
         return {
           issue: data.issue,
-          requestId: requestId
+          requestId: requestId,
+          affectedIssues: data.affected_issues || []
         };
       });
     });
@@ -865,7 +868,7 @@
     setBarStatus(serverIssue.id, "is-saved", 1400);
   }
 
-  function applyIssueDatesFromServer(serverIssue) {
+  function applyIssueDatesFromServer(serverIssue, affectedIssues) {
     var current;
 
     if (!serverIssue) {
@@ -877,6 +880,11 @@
       start_date: serverIssue.start_date,
       due_date: serverIssue.due_date
     }));
+
+    (affectedIssues || []).forEach(function (ai) {
+      replaceIssue(Object.assign({}, state.issueMap.get(ai.id) || {}, ai));
+    });
+
     renderGantt();
     setBarStatus(serverIssue.id, "is-saved", 1400);
   }
@@ -1022,7 +1030,7 @@
     var subject = createElement("a", "easy-gantt__issue-subject", issue.subject);
     var tracker = createElement("span", "easy-gantt__issue-tracker", namedValue(issue.tracker));
 
-    subject.href = issue.editable ? "/issues/" + issue.id + "/edit" : "/issues/" + issue.id;
+    subject.href = "/issues/" + issue.id;
     subject.addEventListener("click", function (event) {
       event.stopPropagation();
     });
@@ -1228,7 +1236,7 @@
           }
 
           state.pendingSaves.delete(issue.id);
-          applyIssueDatesFromServer(result.issue);
+          applyIssueDatesFromServer(result.issue, result.affectedIssues);
           showFlashMessage("success", "Saved #" + issue.id + ".");
         })
         .catch(function (error) {
@@ -1296,6 +1304,15 @@
     if (issue.editable) {
       bar.classList.add("easy-gantt__bar--editable");
       attachBarDragHandlers(bar, issue, range);
+
+      var connector = createElement("span", "easy-gantt__bar-connector");
+      connector.title = "ドラッグして依存関係を追加";
+      connector.addEventListener("pointerdown", function (event) {
+        event.stopPropagation();
+        event.preventDefault();
+        startDependencyDrag(issue, event);
+      });
+      bar.appendChild(connector);
     } else {
       bar.classList.add("easy-gantt__bar--readonly");
     }
@@ -1347,6 +1364,223 @@
   function renderEmpty() {
     state.root.innerHTML = "";
     state.root.appendChild(createElement("div", "easy-gantt__empty", "No issues to display."));
+  }
+
+  function createRelation(fromId, toId) {
+    fetch("/easy_gantt/relations", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "X-CSRF-Token": csrfToken()
+      },
+      body: JSON.stringify({ from_id: fromId, to_id: toId })
+    })
+      .then(function (response) { return response.json(); })
+      .then(function (data) {
+        if (data.success) {
+          state.relations.push(data.relation);
+          (data.affected_issues || []).forEach(function (ai) {
+            replaceIssue(Object.assign({}, state.issueMap.get(ai.id) || {}, ai));
+          });
+          renderGantt();
+          showFlashMessage("success", "依存関係を追加しました。");
+        } else {
+          showFlashMessage("error", (data.errors || []).join(", "));
+        }
+      })
+      .catch(function () {
+        showFlashMessage("error", "依存関係の追加に失敗しました。");
+      });
+  }
+
+  function deleteRelation(id) {
+    fetch("/easy_gantt/relations/" + encodeURIComponent(id), {
+      method: "DELETE",
+      credentials: "same-origin",
+      headers: {
+        Accept: "application/json",
+        "X-CSRF-Token": csrfToken()
+      }
+    })
+      .then(function (response) { return response.json(); })
+      .then(function (data) {
+        if (data.success) {
+          state.relations = state.relations.filter(function (r) { return r.id !== id; });
+          renderGantt();
+          showFlashMessage("success", "依存関係を削除しました。");
+        } else {
+          showFlashMessage("error", (data.errors || []).join(", "));
+        }
+      })
+      .catch(function () {
+        showFlashMessage("error", "依存関係の削除に失敗しました。");
+      });
+  }
+
+  function startDependencyDrag(fromIssue, startEvent) {
+    if (state.dependencyDrag) { return; }
+
+    var ns = "http://www.w3.org/2000/svg";
+    var overlay = document.createElement("div");
+    var svg = document.createElementNS(ns, "svg");
+    var defs = document.createElementNS(ns, "defs");
+    var marker = document.createElementNS(ns, "marker");
+    var arrowPoly = document.createElementNS(ns, "polygon");
+    var line = document.createElementNS(ns, "line");
+
+    overlay.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;z-index:9999;cursor:crosshair;";
+    svg.style.cssText = "position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;";
+
+    marker.setAttribute("id", "dep-drag-arrow");
+    marker.setAttribute("markerWidth", "8");
+    marker.setAttribute("markerHeight", "6");
+    marker.setAttribute("refX", "7");
+    marker.setAttribute("refY", "3");
+    marker.setAttribute("orient", "auto");
+    arrowPoly.setAttribute("points", "0 0, 8 3, 0 6");
+    arrowPoly.setAttribute("fill", "#6366f1");
+    marker.appendChild(arrowPoly);
+    defs.appendChild(marker);
+    svg.appendChild(defs);
+
+    line.setAttribute("stroke", "#6366f1");
+    line.setAttribute("stroke-width", "2");
+    line.setAttribute("stroke-dasharray", "6 3");
+    line.setAttribute("marker-end", "url(#dep-drag-arrow)");
+    line.setAttribute("x1", startEvent.clientX);
+    line.setAttribute("y1", startEvent.clientY);
+    line.setAttribute("x2", startEvent.clientX);
+    line.setAttribute("y2", startEvent.clientY);
+    svg.appendChild(line);
+    overlay.appendChild(svg);
+    document.body.appendChild(overlay);
+
+    state.dependencyDrag = { fromIssueId: fromIssue.id, overlay: overlay };
+
+    function onMove(event) {
+      line.setAttribute("x2", event.clientX);
+      line.setAttribute("y2", event.clientY);
+
+      var bars = document.querySelectorAll(".easy-gantt-bar");
+      bars.forEach(function (b) { b.classList.remove("easy-gantt__bar--dep-target"); });
+
+      overlay.style.pointerEvents = "none";
+      var el = document.elementFromPoint(event.clientX, event.clientY);
+      overlay.style.pointerEvents = "";
+      var targetBar = el && el.closest(".easy-gantt-bar");
+      if (targetBar && Number(targetBar.dataset.ganttIssueId) !== fromIssue.id) {
+        targetBar.classList.add("easy-gantt__bar--dep-target");
+      }
+    }
+
+    function onUp(event) {
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+
+      document.querySelectorAll(".easy-gantt-bar").forEach(function (b) {
+        b.classList.remove("easy-gantt__bar--dep-target");
+      });
+
+      overlay.style.pointerEvents = "none";
+      var el = document.elementFromPoint(event.clientX, event.clientY);
+      document.body.removeChild(overlay);
+      state.dependencyDrag = null;
+
+      var targetBar = el && el.closest(".easy-gantt-bar");
+      if (targetBar) {
+        var toId = Number(targetBar.dataset.ganttIssueId);
+        if (toId && toId !== fromIssue.id) {
+          createRelation(fromIssue.id, toId);
+        }
+      }
+    }
+
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
+  }
+
+  function renderDependencyArrows(entries, range) {
+    if (!state.relations || state.relations.length === 0) { return null; }
+
+    var ns = "http://www.w3.org/2000/svg";
+    var svg = document.createElementNS(ns, "svg");
+    var defs = document.createElementNS(ns, "defs");
+    var marker = document.createElementNS(ns, "marker");
+    var arrowPoly = document.createElementNS(ns, "polygon");
+
+    svg.setAttribute("class", "easy-gantt__dep-arrows");
+    svg.setAttribute("width", range.days * DAY_WIDTH);
+    svg.setAttribute("height", entries.length * ROW_HEIGHT);
+
+    marker.setAttribute("id", "dep-arrowhead");
+    marker.setAttribute("markerWidth", "8");
+    marker.setAttribute("markerHeight", "6");
+    marker.setAttribute("refX", "7");
+    marker.setAttribute("refY", "3");
+    marker.setAttribute("orient", "auto");
+    arrowPoly.setAttribute("points", "0 0, 8 3, 0 6");
+    arrowPoly.setAttribute("fill", "#6366f1");
+    marker.appendChild(arrowPoly);
+    defs.appendChild(marker);
+    svg.appendChild(defs);
+
+    var rowByIssueId = {};
+    var issueById = {};
+    entries.forEach(function (entry, i) {
+      if (entry.type === "issue") {
+        rowByIssueId[entry.issue.id] = i;
+        issueById[entry.issue.id] = entry.issue;
+      }
+    });
+
+    state.relations.forEach(function (rel) {
+      var fromIssue = issueById[rel.from_id];
+      var toIssue = issueById[rel.to_id];
+      if (!fromIssue || !toIssue) { return; }
+      if (!fromIssue.due_date || !toIssue.start_date) { return; }
+      if (rowByIssueId[rel.from_id] === undefined || rowByIssueId[rel.to_id] === undefined) { return; }
+
+      var fromX = (daysBetween(range.start, parseDate(fromIssue.due_date)) + 1) * DAY_WIDTH;
+      var fromY = rowByIssueId[rel.from_id] * ROW_HEIGHT + ROW_HEIGHT / 2;
+      var toX = daysBetween(range.start, parseDate(toIssue.start_date)) * DAY_WIDTH;
+      var toY = rowByIssueId[rel.to_id] * ROW_HEIGHT + ROW_HEIGHT / 2;
+      var dx = Math.max(24, Math.abs(toX - fromX) / 2);
+
+      var d = "M " + fromX + "," + fromY +
+              " C " + (fromX + dx) + "," + fromY +
+              " " + (toX - dx) + "," + toY +
+              " " + toX + "," + toY;
+
+      var path = document.createElementNS(ns, "path");
+      path.setAttribute("d", d);
+      path.setAttribute("fill", "none");
+      path.setAttribute("stroke", "#6366f1");
+      path.setAttribute("stroke-width", "1.5");
+      path.setAttribute("marker-end", "url(#dep-arrowhead)");
+
+      var hitPath = document.createElementNS(ns, "path");
+      hitPath.setAttribute("d", d);
+      hitPath.setAttribute("fill", "none");
+      hitPath.setAttribute("stroke", "transparent");
+      hitPath.setAttribute("stroke-width", "10");
+      hitPath.style.cursor = "pointer";
+      hitPath.title = "クリックして依存関係を削除";
+      (function (relId) {
+        hitPath.addEventListener("click", function (event) {
+          event.stopPropagation();
+          if (window.confirm("この依存関係を削除しますか？")) {
+            deleteRelation(relId);
+          }
+        });
+      }(rel.id));
+
+      svg.appendChild(path);
+      svg.appendChild(hitPath);
+    });
+
+    return svg;
   }
 
   function computeCriticalPath(issues) {
@@ -1452,6 +1686,7 @@
     var criticalIds;
     var displayIssues;
     var range;
+    var depArrows;
     var flash;
     var rootDropZone;
     var shell;
@@ -1506,6 +1741,8 @@
     chartBody.style.height = displayIssues.length * ROW_HEIGHT + "px";
     chartBody.appendChild(renderChartRows(displayIssues, range, meta, criticalIds));
     chartBody.appendChild(renderTodayLine(range, displayIssues.length));
+    depArrows = renderDependencyArrows(displayIssues, range);
+    if (depArrows) { chartBody.appendChild(depArrows); }
     if (state.showProgressLine) {
       chartBody.appendChild(renderProgressLine(displayIssues, range));
     }
@@ -1540,25 +1777,26 @@
 
   function init(root) {
     var issuesUrl = root.dataset.issuesUrl;
+    var relationsUrl = root.dataset.relationsUrl;
     state.root = root;
     state.statuses = JSON.parse(root.dataset.statuses || "[]");
     state.trackers = JSON.parse(root.dataset.trackers || "[]");
 
-    fetch(issuesUrl, {
-      credentials: "same-origin",
-      headers: {
-        Accept: "application/json"
-      }
-    })
-      .then(function (response) {
-        if (!response.ok) {
-          throw new Error("Failed to load issues");
-        }
+    var opts = { credentials: "same-origin", headers: { Accept: "application/json" } };
 
-        return response.json();
+    Promise.all([
+      fetch(issuesUrl, opts).then(function (r) {
+        if (!r.ok) { throw new Error("Failed to load issues"); }
+        return r.json();
+      }),
+      fetch(relationsUrl, opts).then(function (r) {
+        if (!r.ok) { return []; }
+        return r.json();
       })
-      .then(function (issues) {
-        state.issues = issues;
+    ])
+      .then(function (results) {
+        state.issues = results[0];
+        state.relations = results[1] || [];
         rebuildIssueMap();
         renderGantt();
       })
