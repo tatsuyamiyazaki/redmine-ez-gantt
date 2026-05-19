@@ -9,9 +9,11 @@
 <div id="easy-gantt"
      class="easy-gantt"
      data-issues-url="<%= url_for(controller: 'easy_gantt', action: 'issues', project_id: @project.identifier) %>"
-     data-issue-update-url-template="<%= url_for(controller: 'easy_gantt', action: 'update_issue', id: '__ISSUE_ID__') %>"
-     data-statuses="<%= IssueStatus.order(:position).map { |s| { id: s.id, name: s.name } }.to_json %>"
-     data-trackers="<%= Tracker.order(:position).map { |t| { id: t.id, name: t.name } }.to_json %>"
+     data-issue-update-url-template="<%= url_for(controller: 'easy_gantt', action: 'update_issue', project_id: @project.identifier, id: '__ISSUE_ID__') %>"
+     data-relations-create-url="<%= url_for(controller: 'easy_gantt', action: 'create_relation', project_id: @project.identifier) %>"
+     data-relation-delete-url-template="<%= url_for(controller: 'easy_gantt', action: 'delete_relation', project_id: @project.identifier, id: '__RELATION_ID__') %>"
+     data-statuses="<%= @easy_gantt_statuses.map { |s| { id: s.id, name: s.name } }.to_json %>"
+     data-trackers="<%= @easy_gantt_trackers.map { |t| { id: t.id, name: t.name } }.to_json %>"
      data-relations-url="<%= url_for(controller: 'easy_gantt', action: 'relations', project_id: @project.identifier) %>">
   <div class="easy-gantt__loading"><%= l(:label_loading) %></div>
 </div>

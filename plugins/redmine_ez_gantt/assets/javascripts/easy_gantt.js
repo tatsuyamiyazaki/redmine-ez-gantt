@@ -72,6 +72,19 @@
     return "/easy_gantt/issues/" + encodeURIComponent(issueId);
   }
 
+  function relationCreateUrl() {
+    return state.root && state.root.dataset.relationsCreateUrl ? state.root.dataset.relationsCreateUrl : "/easy_gantt/relations";
+  }
+
+  function relationDeleteUrl(relationId) {
+    var template = state.root && state.root.dataset.relationDeleteUrlTemplate;
+    if (template) {
+      return template.replace("__RELATION_ID__", encodeURIComponent(relationId));
+    }
+
+    return "/easy_gantt/relations/" + encodeURIComponent(relationId);
+  }
+
   function createElement(tagName, className, text) {
     var element = document.createElement(tagName);
 
@@ -1367,7 +1380,7 @@
   }
 
   function createRelation(fromId, toId) {
-    fetch("/easy_gantt/relations", {
+    fetch(relationCreateUrl(), {
       method: "POST",
       credentials: "same-origin",
       headers: {
@@ -1396,7 +1409,7 @@
   }
 
   function deleteRelation(id) {
-    fetch("/easy_gantt/relations/" + encodeURIComponent(id), {
+    fetch(relationDeleteUrl(id), {
       method: "DELETE",
       credentials: "same-origin",
       headers: {
