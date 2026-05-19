@@ -1,0 +1,1145 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>redmine_ez_gantt 機能仕様書</title>
+<style>
+  :root {
+    --ink: #0f172a;
+    --ink-soft: #334155;
+    --muted: #64748b;
+    --line: #e2e8f0;
+    --line-strong: #cbd5e1;
+    --surface: #ffffff;
+    --surface-soft: #f8fafc;
+    --surface-pop: #eff6ff;
+    --accent: #2563eb;
+    --accent-soft: #dbeafe;
+    --accent-ink: #1d4ed8;
+    --green: #15803d;
+    --green-soft: #dcfce7;
+    --amber: #b45309;
+    --amber-soft: #fef3c7;
+    --red: #b91c1c;
+    --red-soft: #fee2e2;
+    --indigo: #4338ca;
+    --indigo-soft: #e0e7ff;
+    --code-bg: #0f172a;
+    --code-ink: #e2e8f0;
+    --shadow-sm: 0 2px 6px rgba(15, 23, 42, 0.06);
+    --shadow-md: 0 10px 24px rgba(15, 23, 42, 0.08);
+    --radius: 14px;
+    --radius-sm: 8px;
+    --mono: "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: "Segoe UI", "Hiragino Sans", "Yu Gothic UI", system-ui, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    margin: 0;
+    background: linear-gradient(180deg, #f1f5f9 0%, #f8fafc 320px, #ffffff 100%);
+    color: var(--ink);
+    font-family: var(--sans);
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    max-width: 1320px;
+    margin: 0 auto;
+    gap: 32px;
+    padding: 24px;
+  }
+
+  /* Sidebar */
+  .sidebar {
+    position: sticky;
+    top: 24px;
+    align-self: start;
+    max-height: calc(100vh - 48px);
+    overflow: auto;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+    padding: 20px;
+  }
+  .sidebar h2 {
+    margin: 0 0 12px;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+  }
+  .sidebar ol {
+    margin: 0;
+    padding-left: 1.4em;
+    color: var(--ink-soft);
+  }
+  .sidebar li { margin: 6px 0; }
+  .sidebar a {
+    color: var(--ink-soft);
+    text-decoration: none;
+    border-bottom: 1px dashed transparent;
+  }
+  .sidebar a:hover {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+  .sidebar ol ol {
+    list-style: lower-alpha;
+    margin-top: 4px;
+  }
+
+  /* Main */
+  main { min-width: 0; }
+
+  /* Hero */
+  .hero {
+    background:
+      radial-gradient(900px 280px at 20% 0%, rgba(99, 102, 241, 0.18), transparent 60%),
+      radial-gradient(900px 280px at 80% 0%, rgba(37, 99, 235, 0.18), transparent 60%),
+      linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    color: #f8fafc;
+    border-radius: var(--radius);
+    padding: 40px 36px;
+    box-shadow: var(--shadow-md);
+    overflow: hidden;
+    position: relative;
+  }
+  .hero h1 {
+    margin: 0 0 8px;
+    font-size: 30px;
+    letter-spacing: 0.01em;
+  }
+  .hero .subtitle {
+    color: #cbd5e1;
+    font-size: 15px;
+    margin-bottom: 22px;
+  }
+  .hero .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    color: #e2e8f0;
+    border-radius: 999px;
+    padding: 4px 12px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .chip--method {
+    font-family: var(--mono);
+    letter-spacing: 0.04em;
+  }
+  .chip--get    { background: #064e3b; border-color: #047857; color: #d1fae5; }
+  .chip--post   { background: #1e3a8a; border-color: #2563eb; color: #dbeafe; }
+  .chip--patch  { background: #78350f; border-color: #b45309; color: #fef3c7; }
+  .chip--delete { background: #7f1d1d; border-color: #b91c1c; color: #fee2e2; }
+
+  /* Sections */
+  section {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+    padding: 28px 32px;
+    margin-top: 24px;
+  }
+  section > h2 {
+    margin: 0 0 6px;
+    font-size: 22px;
+    color: var(--ink);
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+  section > h2 .num {
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+    font-weight: 800;
+    font-size: 18px;
+  }
+  section > p.lead {
+    color: var(--muted);
+    margin: 0 0 18px;
+  }
+  section h3 {
+    margin: 24px 0 10px;
+    font-size: 17px;
+    color: var(--ink);
+    padding-left: 10px;
+    border-left: 4px solid var(--accent);
+  }
+  section h4 {
+    margin: 16px 0 6px;
+    font-size: 14px;
+    color: var(--ink-soft);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  /* Tables */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0 4px;
+    font-size: 13.5px;
+    background: var(--surface);
+  }
+  th, td {
+    border-bottom: 1px solid var(--line);
+    padding: 9px 10px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th {
+    background: var(--surface-soft);
+    color: var(--ink-soft);
+    font-weight: 700;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  tr:last-child td { border-bottom: 0; }
+  code {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    background: #f1f5f9;
+    color: #1e293b;
+    padding: 1px 6px;
+    border-radius: 5px;
+    border: 1px solid #e2e8f0;
+  }
+
+  pre {
+    background: var(--code-bg);
+    color: var(--code-ink);
+    border-radius: var(--radius-sm);
+    padding: 16px 18px;
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.6;
+    border: 1px solid #1e293b;
+    box-shadow: var(--shadow-sm);
+  }
+  pre code {
+    background: transparent;
+    border: 0;
+    color: inherit;
+    padding: 0;
+    font-size: inherit;
+  }
+
+  /* Endpoint cards */
+  .endpoint {
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    margin: 14px 0;
+    overflow: hidden;
+    background: var(--surface);
+  }
+  .endpoint__head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: var(--surface-soft);
+    border-bottom: 1px solid var(--line);
+  }
+  .endpoint__head .path {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--ink);
+    font-weight: 600;
+  }
+  .endpoint__head .label {
+    color: var(--muted);
+    font-size: 12px;
+    margin-left: auto;
+  }
+  .endpoint__body {
+    padding: 14px 18px;
+  }
+  .endpoint__body p:first-child { margin-top: 0; }
+  .endpoint__body p:last-child { margin-bottom: 0; }
+
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+  .badge--auth     { background: var(--indigo-soft); color: var(--indigo); }
+  .badge--view     { background: var(--accent-soft); color: var(--accent-ink); }
+  .badge--edit     { background: var(--amber-soft); color: var(--amber); }
+  .badge--ok       { background: var(--green-soft); color: var(--green); }
+  .badge--err      { background: var(--red-soft); color: var(--red); }
+
+  /* Callouts */
+  .callout {
+    border-left: 4px solid var(--accent);
+    background: var(--surface-pop);
+    color: var(--ink-soft);
+    padding: 12px 16px;
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    margin: 14px 0;
+    font-size: 13.5px;
+  }
+  .callout--warn   { border-color: var(--amber); background: var(--amber-soft); color: var(--amber); }
+  .callout--danger { border-color: var(--red);   background: var(--red-soft);   color: var(--red); }
+  .callout--info   { border-color: var(--accent); }
+  .callout strong { color: inherit; }
+
+  /* Grid for feature cards */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 14px;
+    margin-top: 14px;
+  }
+  .card {
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    padding: 14px 16px;
+    background: var(--surface);
+    box-shadow: var(--shadow-sm);
+  }
+  .card h4 {
+    margin: 0 0 6px;
+    font-size: 13.5px;
+    color: var(--ink);
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .card p {
+    margin: 0;
+    font-size: 13px;
+    color: var(--ink-soft);
+  }
+  .card .tag {
+    display: inline-block;
+    margin-bottom: 6px;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: var(--surface-soft);
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  /* Mock gantt */
+  .mock-gantt {
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    margin: 14px 0;
+    background: var(--surface);
+    box-shadow: var(--shadow-sm);
+    font-size: 12px;
+  }
+  .mock-gantt__head {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    background: linear-gradient(180deg, #f8fbff 0%, #edf4fb 100%);
+    border-bottom: 1px solid var(--line);
+  }
+  .mock-gantt__head .left,
+  .mock-gantt__head .right {
+    padding: 6px 10px;
+    font-weight: 700;
+    color: var(--ink-soft);
+  }
+  .mock-gantt__head .right {
+    display: flex;
+    gap: 0;
+  }
+  .mock-gantt__head .right span {
+    flex: 1;
+    text-align: center;
+    border-left: 1px solid var(--line);
+    font-weight: 500;
+    color: var(--muted);
+  }
+  .mock-row {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    border-bottom: 1px dashed var(--line);
+    height: 30px;
+  }
+  .mock-row .left {
+    padding: 4px 10px;
+    color: var(--ink-soft);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .mock-row .left .id { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .mock-row .right {
+    position: relative;
+  }
+  .mock-bar {
+    position: absolute;
+    top: 6px;
+    height: 18px;
+    border-radius: 999px;
+    background: linear-gradient(180deg, #e2e8f0 0%, #cbd5e1 100%);
+    box-shadow: inset 0 0 0 1px rgba(100, 116, 139, 0.22), 0 4px 8px rgba(15, 23, 42, 0.1);
+    overflow: hidden;
+  }
+  .mock-bar .progress {
+    position: absolute;
+    inset: 0 auto 0 0;
+    background: linear-gradient(180deg, #4ade80 0%, #22c55e 100%);
+    border-radius: 999px;
+  }
+  .mock-bar.parent {
+    background: #94a3b8;
+    height: 12px;
+    top: 9px;
+  }
+  .mock-bar.critical {
+    box-shadow: inset 0 0 0 2px #f59e0b, 0 4px 10px rgba(245, 158, 11, 0.25);
+  }
+  .mock-bar.overdue {
+    box-shadow: inset 0 0 0 2px rgba(220, 38, 38, 0.78), 0 4px 8px rgba(220, 38, 38, 0.18);
+  }
+  .mock-today {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: #e11d48;
+    box-shadow: 0 0 10px rgba(225, 29, 72, 0.4);
+  }
+
+  /* Spec lists */
+  ul.spec { margin: 6px 0 6px; padding-left: 1.2em; }
+  ul.spec li { margin: 3px 0; }
+
+  /* Footer */
+  footer {
+    margin-top: 32px;
+    padding: 18px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  @media (max-width: 960px) {
+    .layout { grid-template-columns: 1fr; }
+    .sidebar { position: static; max-height: none; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+
+  <aside class="sidebar">
+    <h2>目次</h2>
+    <ol>
+      <li><a href="#overview">概要</a></li>
+      <li><a href="#install">インストールと前提</a></li>
+      <li><a href="#permissions">権限とメニュー</a></li>
+      <li><a href="#endpoints">HTTP エンドポイント</a>
+        <ol>
+          <li><a href="#ep-index">画面表示</a></li>
+          <li><a href="#ep-issues">チケット一覧</a></li>
+          <li><a href="#ep-relations">依存関係一覧</a></li>
+          <li><a href="#ep-update-issue">チケット更新</a></li>
+          <li><a href="#ep-update-parent">親付け替え</a></li>
+          <li><a href="#ep-create-relation">依存関係作成</a></li>
+          <li><a href="#ep-delete-relation">依存関係削除</a></li>
+        </ol>
+      </li>
+      <li><a href="#data">データモデル</a></li>
+      <li><a href="#ui">UI 機能</a></li>
+      <li><a href="#interaction">インタラクション</a></li>
+      <li><a href="#visualization">可視化機能</a></li>
+      <li><a href="#cascade">依存関係カスケード</a></li>
+      <li><a href="#frontend">フロント実装の特徴</a></li>
+      <li><a href="#i18n">国際化</a></li>
+      <li><a href="#errors">エラーレスポンス</a></li>
+    </ol>
+  </aside>
+
+  <main>
+
+    <!-- HERO -->
+    <section class="hero">
+      <h1>redmine_ez_gantt 機能仕様書</h1>
+      <p class="subtitle">Redmine 6 系向けのプロジェクト用ガントチャートプラグイン。バーのドラッグ、進捗編集、親子付け替え、依存関係 (先行/後続) の追加・削除をブラウザ上で直接行えます。</p>
+      <div class="meta">
+        <span class="chip">Version 0.0.1</span>
+        <span class="chip">Redmine ≥ 6.0.0</span>
+        <span class="chip">Plugin ID: redmine_ez_gantt</span>
+        <span class="chip">Module: easy_gantt</span>
+      </div>
+    </section>
+
+    <!-- 1. OVERVIEW -->
+    <section id="overview">
+      <h2><span class="num">1.</span> 概要</h2>
+      <p class="lead">本プラグインは Redmine のプロジェクト画面に「Easy Gantt」メニューを追加し、対象プロジェクトとその子孫プロジェクトに紐づくチケットを 1 つのガントチャートに統合表示します。</p>
+
+      <div class="grid">
+        <div class="card">
+          <span class="tag">表示</span>
+          <h4>サブプロジェクト統合ビュー</h4>
+          <p>選択中プロジェクト + すべての子孫プロジェクトのチケットを 1 枚のチャートに集約します。</p>
+        </div>
+        <div class="card">
+          <span class="tag">編集</span>
+          <h4>ドラッグ操作</h4>
+          <p>バーの中央ドラッグで全体移動、左右端のハンドルで開始日/期限のみを変更できます。</p>
+        </div>
+        <div class="card">
+          <span class="tag">編集</span>
+          <h4>進捗・親付け替え</h4>
+          <p>0〜100% の数値入力での進捗更新と、行のドラッグ&ドロップでの親付け替えに対応します。</p>
+        </div>
+        <div class="card">
+          <span class="tag">依存</span>
+          <h4>依存関係 (precedes)</h4>
+          <p>バー右端のドット (コネクタ) からドラッグで先行・後続関係を作成、矢印クリックで削除します。</p>
+        </div>
+        <div class="card">
+          <span class="tag">可視化</span>
+          <h4>イナズマ線 / クリティカルパス</h4>
+          <p>ツールバーから 2 種類の進捗分析オーバーレイをトグルできます。</p>
+        </div>
+        <div class="card">
+          <span class="tag">UX</span>
+          <h4>楽観的更新</h4>
+          <p>サーバー保存前に UI を先行反映し、エラー時はクライアント側で巻き戻します。</p>
+        </div>
+      </div>
+
+      <h3>サンプル表示 (モック)</h3>
+      <div class="mock-gantt">
+        <div class="mock-gantt__head">
+          <div class="left">Issues</div>
+          <div class="right">
+            <span>2026/05</span><span>2026/06</span><span>2026/07</span><span>2026/08</span>
+          </div>
+        </div>
+        <div class="mock-row">
+          <div class="left"><span class="id">#101</span>計画フェーズ (親)</div>
+          <div class="right">
+            <div class="mock-bar parent" style="left:2%;width:60%"><div class="progress" style="width:45%"></div></div>
+          </div>
+        </div>
+        <div class="mock-row">
+          <div class="left" style="padding-left:32px"><span class="id">#102</span>要件定義</div>
+          <div class="right">
+            <div class="mock-bar" style="left:4%;width:18%"><div class="progress" style="width:80%"></div></div>
+          </div>
+        </div>
+        <div class="mock-row">
+          <div class="left" style="padding-left:32px"><span class="id">#103</span>設計 (クリティカル)</div>
+          <div class="right">
+            <div class="mock-bar critical" style="left:24%;width:22%"><div class="progress" style="width:55%"></div></div>
+          </div>
+        </div>
+        <div class="mock-row">
+          <div class="left" style="padding-left:32px"><span class="id">#104</span>レビュー (期限超過)</div>
+          <div class="right">
+            <div class="mock-bar overdue" style="left:48%;width:14%"><div class="progress" style="width:30%"></div></div>
+          </div>
+        </div>
+        <div class="mock-row">
+          <div class="left"><span class="id">#201</span>開発フェーズ (親)</div>
+          <div class="right">
+            <div class="mock-bar parent" style="left:46%;width:48%"><div class="progress" style="width:20%"></div></div>
+            <div class="mock-today" style="left:52%"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. INSTALL -->
+    <section id="install">
+      <h2><span class="num">2.</span> インストールと前提</h2>
+      <table>
+        <thead><tr><th>項目</th><th>値</th></tr></thead>
+        <tbody>
+          <tr><td>Plugin ID</td><td><code>redmine_ez_gantt</code></td></tr>
+          <tr><td>Name</td><td>Easy Gantt</td></tr>
+          <tr><td>Version</td><td>0.0.1</td></tr>
+          <tr><td>必要 Redmine バージョン</td><td>6.0.0 以上</td></tr>
+          <tr><td>動作モード</td><td>Rails production / asset precompile 済み</td></tr>
+          <tr><td>外部依存ライブラリ</td><td>無し (素の ES5 系 JS / CSS のみ)</td></tr>
+        </tbody>
+      </table>
+
+      <div class="callout callout--info">
+        <strong>導入手順:</strong> <code>plugins/redmine_ez_gantt</code> 配下を Redmine の <code>plugins/</code> に配置し、<code>bundle exec rake redmine:plugins:migrate RAILS_ENV=production</code> と <code>bundle exec rake assets:precompile RAILS_ENV=production</code> を実行してから Rails を再起動してください。本プラグインは独自テーブルを持たないため、マイグレーションは空走します。
+      </div>
+    </section>
+
+    <!-- 3. PERMISSIONS -->
+    <section id="permissions">
+      <h2><span class="num">3.</span> 権限とメニュー</h2>
+      <p class="lead">プロジェクトモジュール <code>easy_gantt</code> 配下に 2 つの権限を定義しています。プロジェクトでこのモジュールを有効にしないとメニューに表示されません。</p>
+
+      <h3>プロジェクトモジュール</h3>
+      <table>
+        <thead><tr><th>キー</th><th>表示名 (ja)</th><th>説明</th></tr></thead>
+        <tbody>
+          <tr><td><code>easy_gantt</code></td><td>Easy Gantt</td><td>ガントチャートメニューを有効化するモジュール</td></tr>
+        </tbody>
+      </table>
+
+      <h3>権限定義</h3>
+      <table>
+        <thead><tr><th>権限</th><th>付与対象アクション</th><th>備考</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="badge badge--view">view_easy_gantt</span></td>
+            <td><code>index</code>, <code>issues</code>, <code>relations</code></td>
+            <td>ガント画面の表示・チケット一覧 / 依存関係取得。プロジェクトメンバーであることが必須 (<code>require: :member</code>)。</td>
+          </tr>
+          <tr>
+            <td><span class="badge badge--edit">edit_easy_gantt</span></td>
+            <td><code>index</code>, <code>update_issue</code>, <code>update_issue_parent</code>, <code>create_relation</code>, <code>delete_relation</code></td>
+            <td>編集系 API の利用と、チケット側プロジェクトを基準とした権限チェック (クロスプロジェクト編集対応)。</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>メニュー</h3>
+      <p>プロジェクトメニューに、標準ガント (<code>gantt</code>) の直後に挿入されます。</p>
+      <pre><code>menu :project_menu, :easy_gantt,
+     { controller: 'easy_gantt', action: 'index' },
+     caption: :label_easy_gantt,
+     after: :gantt,
+     param: :project_id</code></pre>
+    </section>
+
+    <!-- 4. ENDPOINTS -->
+    <section id="endpoints">
+      <h2><span class="num">4.</span> HTTP エンドポイント</h2>
+      <p class="lead">サーバー側のエンドポイントは画面 1 本 + 取得 2 本 + 編集 4 本の計 7 本です。すべてプロジェクトメンバーまたはチケットのプロジェクトに対する権限チェックが行われます。</p>
+
+      <h3>共通仕様</h3>
+      <ul class="spec">
+        <li><strong>認証:</strong> Redmine のセッション (<code>credentials: same-origin</code>) と、状態変更系は <code>X-CSRF-Token</code> ヘッダが必須。</li>
+        <li><strong>Content-Type:</strong> JSON 受け渡しは <code>application/json</code>。日付は ISO 8601 (<code>YYYY-MM-DD</code>) で送受信。</li>
+        <li><strong>レスポンス成功:</strong> <code>{"success": true, ...}</code>。</li>
+        <li><strong>レスポンス失敗:</strong> <code>{"success": false, "errors": [...]}</code>。HTTP は <code>422 Unprocessable Entity</code> または <code>403 Forbidden</code> / <code>404 Not Found</code>。</li>
+        <li><strong>可視性:</strong> チケット取得・更新は <code>Issue.visible</code> スコープで保護され、閲覧不可のチケットは存在しないものとして扱われます。</li>
+      </ul>
+
+      <!-- index -->
+      <article id="ep-index" class="endpoint">
+        <div class="endpoint__head">
+          <span class="chip chip--method chip--get">GET</span>
+          <span class="path">/projects/:project_id/easy_gantt</span>
+          <span class="label">ガント画面 (HTML)</span>
+        </div>
+        <div class="endpoint__body">
+          <p>Easy Gantt のメイン HTML を返します。<code>view_easy_gantt</code> 権限が必要。テンプレートは <code>&lt;div id="easy-gantt"&gt;</code> 1 つを描画し、後段の URL は data 属性で渡されます。</p>
+          <h4>HTML data 属性</h4>
+          <table>
+            <thead><tr><th>属性</th><th>用途</th></tr></thead>
+            <tbody>
+              <tr><td><code>data-issues-url</code></td><td>チケット一覧 JSON の取得先</td></tr>
+              <tr><td><code>data-issue-update-url-template</code></td><td>チケット更新 URL のテンプレート (<code>__ISSUE_ID__</code> を置換)</td></tr>
+              <tr><td><code>data-relations-url</code></td><td>依存関係一覧 JSON の取得先</td></tr>
+              <tr><td><code>data-statuses</code></td><td>ステータス一覧 (フィルタ用) JSON</td></tr>
+              <tr><td><code>data-trackers</code></td><td>トラッカー一覧 (フィルタ用) JSON</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </article>
+
+      <!-- issues -->
+      <article id="ep-issues" class="endpoint">
+        <div class="endpoint__head">
+          <span class="chip chip--method chip--get">GET</span>
+          <span class="path">/projects/:project_id/easy_gantt/issues</span>
+          <span class="label">チケット一覧 (JSON)</span>
+        </div>
+        <div class="endpoint__body">
+          <p><code>view_easy_gantt</code> 権限が必要。プロジェクトと <strong>子孫プロジェクト</strong> の可視チケットを <code>projects.lft, issues.start_date, issues.id</code> 順で返します。</p>
+          <h4>レスポンス (1 件)</h4>
+<pre><code>{
+  "id": 123,
+  "subject": "要件定義",
+  "tracker":     { "id": 1, "name": "Task" },
+  "status":      { "id": 2, "name": "進行中" },
+  "assigned_to": { "id": 5, "name": "dev1" },
+  "project":     { "id": 8, "name": "計画フェーズ" },
+  "project_id": 8,
+  "parent_issue_id": null,
+  "start_date": "2026-05-01",
+  "due_date":   "2026-05-14",
+  "done_ratio": 35,
+  "editable":   true
+}</code></pre>
+          <p><code>editable</code> は <code>User.current.allowed_to?(:edit_easy_gantt, issue.project)</code> を都度評価した結果です。クロスプロジェクト集約表示でも、プロジェクトごとに編集可否が変わります。</p>
+        </div>
+      </article>
+
+      <!-- relations -->
+      <article id="ep-relations" class="endpoint">
+        <div class="endpoint__head">
+          <span class="chip chip--method chip--get">GET</span>
+          <span class="path">/projects/:project_id/easy_gantt/relations</span>
+          <span class="label">依存関係一覧 (JSON)</span>
+        </div>
+        <div class="endpoint__body">
+          <p><code>view_easy_gantt</code> 権限が必要。プロジェクト + 子孫の可視チケット同士をつなぐ <code>precedes</code> (先行) 関係のみを返します。両端がフィルタ外であれば除外されます。</p>
+<pre><code>[
+  { "id": 7, "from_id": 123, "to_id": 124, "delay": 0 }
+]</code></pre>
+        </div>
+      </article>
+
+      <!-- update_issue -->
+      <article id="ep-update-issue" class="endpoint">
+        <div class="endpoint__head">
+          <span class="chip chip--method chip--patch">PATCH</span>
+          <span class="path">/easy_gantt/issues/:id</span>
+          <span class="label">チケット更新 (日付 / 進捗)</span>
+        </div>
+        <div class="endpoint__body">
+          <p><span class="badge badge--auth">edit_easy_gantt</span> が <strong>チケットの所属プロジェクト</strong> に対して必要。許可される属性は意図的に 3 つに限定されています。</p>
+          <h4>リクエストボディ</h4>
+<pre><code>{
+  "issue": {
+    "start_date": "2026-05-01",  // 任意 (省略時は変更なし)
+    "due_date":   "2026-05-14",  // 任意 (省略時は変更なし)
+    "done_ratio": 50              // 任意 (0..100 の整数)
+  }
+}</code></pre>
+          <h4>バリデーション</h4>
+          <ul class="spec">
+            <li><code>start_date</code> / <code>due_date</code> は ISO 8601 でパース。不正値は <code>nil</code> として扱う。</li>
+            <li><code>start_date > due_date</code> の場合は <code>422</code> エラー。</li>
+            <li><code>done_ratio</code> は整数 0〜100 のみ受け付け、範囲外は <code>422</code> エラー。</li>
+          </ul>
+          <h4>レスポンス (成功)</h4>
+<pre><code>{
+  "success": true,
+  "issue":           { /* 更新後の presenter */ },
+  "affected_issues": [ /* カスケード移動された後続チケット (precedes) */ ]
+}</code></pre>
+          <div class="callout callout--info">
+            日付変更が <code>precedes</code> 後続チケットの開始日を侵食する場合、<a href="#cascade">カスケードロジック</a>により後続チケットを自動シフトし、<code>affected_issues</code> に含めて返します。
+          </div>
+        </div>
+      </article>
+
+      <!-- update_issue_parent -->
+      <article id="ep-update-parent" class="endpoint">
+        <div class="endpoint__head">
+          <span class="chip chip--method chip--patch">PATCH</span>
+          <span class="path">/easy_gantt/issues/:id/parent</span>
+          <span class="label">親付け替え</span>
+        </div>
+        <div class="endpoint__body">
+          <p><span class="badge badge--auth">edit_easy_gantt</span> が必要。チケットの <code>parent_issue_id</code> のみを変更します。</p>
+          <h4>リクエストボディ</h4>
+<pre><code>{ "issue": { "parent_issue_id": 200 } }
+// null を渡すとルートチケット化</code></pre>
+          <h4>循環チェック</h4>
+          <ul class="spec">
+            <li>新しい親が自分自身であれば拒否。</li>
+            <li>新しい親から祖先方向に辿った系列に自分自身が含まれていれば拒否 (子孫を親にできない)。</li>
+            <li>該当時は <code>422</code> + <code>"invalid parent issue"</code>。</li>
+          </ul>
+        </div>
+      </article>
+
+      <!-- create_relation -->
+      <article id="ep-create-relation" class="endpoint">
+        <div class="endpoint__head">
+          <span class="chip chip--method chip--post">POST</span>
+          <span class="path">/easy_gantt/relations</span>
+          <span class="label">依存関係 (precedes) 作成</span>
+        </div>
+        <div class="endpoint__body">
+          <p><strong>先行チケット側</strong> のプロジェクトに対して <code>edit_easy_gantt</code> が必要 (<code>403</code>)。同一チケットへの自己依存は <code>422</code> で拒否。<code>delay</code> は常に <code>0</code> で作成されます。</p>
+          <h4>リクエストボディ</h4>
+<pre><code>{ "from_id": 123, "to_id": 124 }</code></pre>
+          <h4>レスポンス (成功)</h4>
+<pre><code>{
+  "success": true,
+  "relation": { "id": 7, "from_id": 123, "to_id": 124, "delay": 0 },
+  "affected_issues": [ /* from_id のカスケード結果 */ ]
+}</code></pre>
+        </div>
+      </article>
+
+      <!-- delete_relation -->
+      <article id="ep-delete-relation" class="endpoint">
+        <div class="endpoint__head">
+          <span class="chip chip--method chip--delete">DELETE</span>
+          <span class="path">/easy_gantt/relations/:id</span>
+          <span class="label">依存関係削除</span>
+        </div>
+        <div class="endpoint__body">
+          <p><code>precedes</code> 関係のみが対象。両端のうち先行側のプロジェクトに対して <code>edit_easy_gantt</code> が必要。該当 ID が見つからない、または不可視の場合は <code>404</code>。</p>
+          <h4>レスポンス (成功)</h4>
+<pre><code>{ "success": true }</code></pre>
+        </div>
+      </article>
+    </section>
+
+    <!-- 5. DATA MODEL -->
+    <section id="data">
+      <h2><span class="num">5.</span> データモデル</h2>
+      <p class="lead">独自テーブルは持たず、Redmine 標準のモデルを参照します。プラグインが触れる属性は次の通りです。</p>
+
+      <table>
+        <thead><tr><th>モデル</th><th>使用属性</th><th>備考</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><code>Issue</code></td>
+            <td><code>start_date</code>, <code>due_date</code>, <code>done_ratio</code>, <code>parent_id</code>, <code>tracker</code>, <code>status</code>, <code>assigned_to</code>, <code>project</code>, <code>subject</code></td>
+            <td>更新対象は日付 2 種・進捗・親 ID のみ。それ以外は読み取り専用。</td>
+          </tr>
+          <tr>
+            <td><code>Project</code></td>
+            <td><code>self_and_descendants</code>, <code>identifier</code>, <code>lft</code> (ネストセット)</td>
+            <td>サブプロジェクト統合表示のためツリーごと取得。</td>
+          </tr>
+          <tr>
+            <td><code>IssueRelation</code></td>
+            <td><code>issue_from_id</code>, <code>issue_to_id</code>, <code>relation_type=precedes</code>, <code>delay</code></td>
+            <td>本プラグインが扱う関係は <code>precedes</code> のみ。<code>delay</code> は 0 固定で作成。</td>
+          </tr>
+          <tr>
+            <td><code>IssueStatus</code> / <code>Tracker</code></td>
+            <td><code>id</code>, <code>name</code>, <code>position</code></td>
+            <td>フィルタドロップダウンの選択肢として HTML data 属性で渡す。</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>EasyGanttIssuePresenter</h3>
+      <p>JSON 形を一元管理します。新しい属性をガント上に出す場合はここを起点に拡張します。</p>
+<pre><code>{
+  id: ...,
+  subject: ...,
+  tracker:     { id, name } | null,
+  status:      { id, name } | null,
+  assigned_to: { id, name } | null,
+  project:     { id, name } | null,
+  project_id: ...,
+  parent_issue_id: ... | null,
+  start_date:  "YYYY-MM-DD" | null,
+  due_date:    "YYYY-MM-DD" | null,
+  done_ratio:  0..100,
+  editable:    boolean  // User.current.allowed_to?(:edit_easy_gantt, issue.project)
+}</code></pre>
+    </section>
+
+    <!-- 6. UI -->
+    <section id="ui">
+      <h2><span class="num">6.</span> UI 機能</h2>
+      <p class="lead">画面は単一の <code>#easy-gantt</code> 要素にフルレンダリングされます。レイアウト定数は <code>DAY_WIDTH=24px</code> / <code>ROW_HEIGHT=32px</code> / <code>LEFT_PANE_WIDTH=320px</code>。</p>
+
+      <h3>ツールバー</h3>
+      <ul class="spec">
+        <li><strong>イナズマ線</strong> トグル — 進捗線オーバーレイの ON/OFF。</li>
+        <li><strong>クリティカルパス</strong> トグル — 最遅完了日に至る親子チェーンをハイライト。</li>
+        <li><strong>チケット一覧を表示/閉じる</strong> — 左ペインの折りたたみ。</li>
+        <li><strong>ステータス フィルタ</strong> — ID 単一選択。</li>
+        <li><strong>トラッカー フィルタ</strong> — ID 単一選択。</li>
+      </ul>
+
+      <h3>左ペイン (Issues)</h3>
+      <ul class="spec">
+        <li>プロジェクト見出し行 + チケット行を DFS 順で描画 (<code>orderedIssues</code>)。</li>
+        <li>親子階層は <code>padding-left: 8 + (depth + 1) * 18px</code> でインデント表現。</li>
+        <li>各行に <code>#ID</code>, 件名 (チケット詳細へリンク), トラッカーチップ, 進捗入力欄を配置。</li>
+        <li><strong>親チケット</strong>は件名を太字、<strong>期限超過チケット</strong>は ID 末尾に「!」、件名を赤色。</li>
+        <li>編集可能行は <code>draggable</code>。マウスダウン位置が進捗入力上ならドラッグ抑止。</li>
+        <li>左ペインの幅は <code>220〜560px</code> でドラッグリサイズ可。折りたたみ時はチャートが全幅化。</li>
+      </ul>
+
+      <h3>右ペイン (Timeline)</h3>
+      <ul class="spec">
+        <li>ヘッダは <strong>年/月行 + 日付行</strong>の 2 段構成。</li>
+        <li>日付セルは曜日に応じて色分け: <strong>土曜</strong>=青背景、<strong>日曜</strong>=赤背景、<strong>月初</strong>=強調。</li>
+        <li>背景は CSS グラデーションで日単位 / 行単位のグリッドを描画。</li>
+        <li>本日 (<code>today</code>) の位置に縦の <strong>今日線</strong>を表示。</li>
+        <li>表示範囲はチケット全件の <code>min(start_date)..max(due_date)</code> と本日を含むよう自動拡張。</li>
+        <li>ヘッダがビューポート上端を超えたら、別途<strong>固定ツールバー</strong>が日付行と横スクロールバーを表示しスクロール同期。</li>
+      </ul>
+
+      <h3>レイアウト定数とレスポンシブ</h3>
+      <table>
+        <thead><tr><th>定数</th><th>値</th><th>意味</th></tr></thead>
+        <tbody>
+          <tr><td><code>DAY_WIDTH</code></td><td>24px</td><td>1 日のセル幅</td></tr>
+          <tr><td><code>ROW_HEIGHT</code></td><td>32px</td><td>1 行の高さ</td></tr>
+          <tr><td><code>LEFT_PANE_WIDTH</code></td><td>320px</td><td>左ペイン既定幅</td></tr>
+          <tr><td>レスポンシブ (<code>≤900px</code>)</td><td>左ペイン 280px、バー日付・トラッカーチップ非表示</td><td>狭幅画面向けの省略表示</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 7. INTERACTION -->
+    <section id="interaction">
+      <h2><span class="num">7.</span> インタラクション</h2>
+
+      <h3>バーのドラッグ</h3>
+      <p>ピクセル単位の移動量を <code>DAY_WIDTH</code> で割って日数差分に丸めて反映します。<code>start_date &gt; due_date</code> になる操作はリリース時点でロールバックされます。</p>
+      <table>
+        <thead><tr><th>掴む位置</th><th>動作</th><th>変更される属性</th></tr></thead>
+        <tbody>
+          <tr><td>バー中央</td><td>全体スライド</td><td><code>start_date</code> と <code>due_date</code> を同量シフト</td></tr>
+          <tr><td>左端ハンドル</td><td>開始日リサイズ</td><td><code>start_date</code> のみ</td></tr>
+          <tr><td>右端ハンドル</td><td>期限リサイズ</td><td><code>due_date</code> のみ</td></tr>
+        </tbody>
+      </table>
+
+      <h3>進捗入力</h3>
+      <ul class="spec">
+        <li><code>&lt;input type="number" min="0" max="100" step="5"&gt;</code>。</li>
+        <li><code>change</code> で <code>PATCH /easy_gantt/issues/:id</code> を呼び出し、楽観的に <code>done_ratio</code> を更新。</li>
+        <li><code>editable=false</code> のチケットは入力欄が <code>disabled</code>。</li>
+      </ul>
+
+      <h3>親付け替え (Drag &amp; Drop)</h3>
+      <ul class="spec">
+        <li>編集可能行は <code>draggable=true</code>。ドロップ先候補は他のチケット行、またはチャート上部の<strong>ルートドロップゾーン</strong>。</li>
+        <li>クライアント側で「自分自身」「子孫への移動」を事前検証してエラーメッセージを表示。</li>
+        <li>サーバー側でも循環チェックを行い、<code>422</code> で拒否される場合があります。</li>
+        <li>変更前の親 ID を保持し、失敗時に巻き戻し。</li>
+      </ul>
+
+      <h3>依存関係の追加・削除</h3>
+      <ul class="spec">
+        <li>編集可能なバーをホバーすると <strong>右端のコネクタ (白丸 / 紫枠)</strong> が表示される。</li>
+        <li>コネクタを <code>pointerdown</code> してそのままドラッグするとフルスクリーンオーバーレイ上に破線矢印が伸び、別のバー上でドロップすると <code>POST /easy_gantt/relations</code> が走る。</li>
+        <li>依存矢印は SVG パス (ベジエ曲線) で描画。<strong>透明な太線</strong>のヒットエリアを重ね、クリック時に <code>window.confirm</code> 経由で <code>DELETE /easy_gantt/relations/:id</code> を呼び出す。</li>
+      </ul>
+
+      <h3>フラッシュメッセージ</h3>
+      <p>画面上部に常駐する <code>.easy-gantt-flash</code> に、<strong>info / success / error</strong> の 3 段階で進捗・結果を表示します。保存中・成功・失敗の状態はバー側にも <code>is-saving</code> / <code>is-saved</code> / <code>is-error</code> クラスとして反映されます。</p>
+    </section>
+
+    <!-- 8. VISUALIZATION -->
+    <section id="visualization">
+      <h2><span class="num">8.</span> 可視化機能</h2>
+
+      <h3>バーの種別</h3>
+      <div class="grid">
+        <div class="card">
+          <span class="tag">子チケット</span>
+          <h4>通常バー</h4>
+          <p>角丸の灰色バーに緑のプログレス。バー内にラベル「作業中」(ステータス名一致時) と進捗 % を表示。</p>
+        </div>
+        <div class="card">
+          <span class="tag">親チケット</span>
+          <h4>親バー</h4>
+          <p>細身のバーに両端の<strong>ダイヤ型キャップ</strong>。親はバー幅・進捗率いずれもサーバー保存値そのまま (子の集計は行わない)。</p>
+        </div>
+        <div class="card">
+          <span class="tag">期限超過</span>
+          <h4>Overdue</h4>
+          <p>本日より <code>due_date</code> が前 かつ 進捗 100% 未満のとき。赤い内枠と影で強調表示。</p>
+        </div>
+        <div class="card">
+          <span class="tag">クリティカル</span>
+          <h4>Critical Path</h4>
+          <p>クリティカルパストグル ON 時、橙色の内枠と橙系プログレスで表示。</p>
+        </div>
+        <div class="card">
+          <span class="tag">編集不可</span>
+          <h4>Readonly</h4>
+          <p>不透明度を下げて表示。ドラッグハンドル・コネクタ非表示。</p>
+        </div>
+        <div class="card">
+          <span class="tag">保存中</span>
+          <h4>Saving / Saved / Error</h4>
+          <p>サーバー往復に合わせて影色が変化。エラー時は赤いグロー後に元状態へ巻き戻し。</p>
+        </div>
+      </div>
+
+      <h3>クリティカルパス計算</h3>
+      <p>JS 側で計算 (<code>computeCriticalPath</code>)。サーバーには情報を送らず、フィルタ後のチケットツリーから次の手順で導出します。</p>
+      <ol>
+        <li>各ルートチケットについて、子孫を含めた最遅 <code>due_date</code> を再帰計算。</li>
+        <li>全ルートの中で最も遅い日付 <code>globalLatest</code> を求める。</li>
+        <li><code>globalLatest</code> に到達するルートを起点に、各階層で「最遅子」を選びながら降下し、通過したチケット ID を <code>criticalIds</code> に蓄積。</li>
+      </ol>
+      <div class="callout callout--warn">
+        <strong>仕様上の留意点:</strong> このアルゴリズムは依存関係 (<code>precedes</code>) ではなく <strong>親子ツリーの最遅 due_date</strong> を見ます。依存関係でクリティカルチェーンを引き出す厳密な CPM ではない点に注意してください。
+      </div>
+
+      <h3>イナズマ線 (Progress Line)</h3>
+      <p>各チケット行ごとに「現在の進捗が時間軸上どこに相当するか」をドットでプロットし、行間をポリラインで結びます。</p>
+      <ul class="spec">
+        <li>進捗位置 = <code>start_date + duration × done_ratio / 100</code>。</li>
+        <li>進捗位置が <strong>今日線より左</strong>かつ <code>done_ratio &lt; 100</code> なら<strong>赤ドット</strong> (遅延)。それ以外は緑ドット。</li>
+        <li>線色は橙 (<code>#f59e0b</code>)、SVG オーバーレイで描画。</li>
+      </ul>
+
+      <h3>依存関係矢印</h3>
+      <ul class="spec">
+        <li>SVG ベジエパスで <code>from.due_date + 1日</code> 右端から <code>to.start_date</code> 左端へ。</li>
+        <li>矢頭マーカー (<code>id="dep-arrowhead"</code>) は紫 (<code>#6366f1</code>)。</li>
+        <li>ヒット用に <code>stroke=transparent, stroke-width=10</code> のパスを重ね、クリックで削除確認。</li>
+      </ul>
+    </section>
+
+    <!-- 9. CASCADE -->
+    <section id="cascade">
+      <h2><span class="num">9.</span> 依存関係カスケード</h2>
+      <p class="lead">先行チケットの日付が変わった、または新しい先行関係が作られたときに、後続チケットの開始日 / 期限を自動的に押し出します。</p>
+
+      <h3>適用契機</h3>
+      <ul class="spec">
+        <li><code>PATCH /easy_gantt/issues/:id</code> でチケットを更新し、保存が成功したとき。</li>
+        <li><code>POST /easy_gantt/relations</code> で先行関係を新規作成し、保存が成功したとき。</li>
+      </ul>
+
+      <h3>計算式</h3>
+      <pre><code>delay         = relation.delay (本プラグインでは作成時 0 固定)
+min_start     = predecessor.due_date + delay + 1
+if successor.start_date &lt; min_start:
+  duration                 = successor.due_date - successor.start_date
+  successor.start_date     = min_start
+  successor.due_date       = min_start + duration
+  affected &lt;&lt; successor
+  # successor を起点に再帰 (visited Set で循環防止)</code></pre>
+
+      <h3>挙動の要点</h3>
+      <ul class="spec">
+        <li>後続チケットの <strong>期間 (duration) を保ったまま</strong> シフトする (右側に押し出すだけ)。</li>
+        <li>後続の <code>start_date</code> が新しい下限 <code>min_start</code> より <strong>後</strong> なら何もしない (前倒しは行わない)。</li>
+        <li><code>update_columns</code> による直接書き込みのため、コールバックやバリデーションは走らない。</li>
+        <li>循環は <code>visited</code> Set で抑止。</li>
+        <li>影響を受けたチケットは <code>affected_issues</code> としてレスポンスで返り、フロントは <code>replaceIssue</code> で UI を更新。</li>
+      </ul>
+
+      <div class="callout callout--info">
+        フロント側からの <strong>個別の遅延編集 (delay 変更) API は提供されません</strong>。<code>delay</code> を変更したい場合は Redmine 標準の関連編集画面を使用してください。
+      </div>
+    </section>
+
+    <!-- 10. FRONTEND -->
+    <section id="frontend">
+      <h2><span class="num">10.</span> フロント実装の特徴</h2>
+
+      <h3>状態管理</h3>
+      <p>IIFE 内のシングルトン <code>state</code> オブジェクトに全状態を集約。<code>renderGantt()</code> は差分更新せず、毎回フルレンダリングします。</p>
+      <table>
+        <thead><tr><th>キー</th><th>用途</th></tr></thead>
+        <tbody>
+          <tr><td><code>issues</code> / <code>issueMap</code></td><td>サーバーから取得したチケット配列 (ID -> 参照)</td></tr>
+          <tr><td><code>relations</code></td><td><code>precedes</code> 関係の配列</td></tr>
+          <tr><td><code>pendingSaves</code> / <code>pendingProgressSaves</code></td><td>進行中の楽観更新 (saveSeq でレースを判定)</td></tr>
+          <tr><td><code>leftPaneWidth</code> / <code>leftPaneCollapsed</code></td><td>左ペインの寸法・表示状態</td></tr>
+          <tr><td><code>filterStatusId</code> / <code>filterTrackerId</code></td><td>フィルタ状態</td></tr>
+          <tr><td><code>showProgressLine</code> / <code>showCriticalPath</code></td><td>オーバーレイのトグル</td></tr>
+          <tr><td><code>dependencyDrag</code></td><td>依存関係ドラッグ中の一時状態</td></tr>
+          <tr><td><code>flash</code></td><td>最後に表示したメッセージ</td></tr>
+        </tbody>
+      </table>
+
+      <h3>楽観的更新</h3>
+      <ol>
+        <li>編集操作を受けてクライアント側で先に <code>state.issues</code> を書き換え再描画。</li>
+        <li>同時に <code>pendingSaves.set(issueId, requestId)</code> でリクエスト ID を記録。</li>
+        <li>サーバーが成功を返したら、レスポンスの <code>issue</code> と <code>affected_issues</code> を <code>replaceIssue</code> で反映。<code>pendingSaves.get(issueId) === requestId</code> でない場合は、より新しい操作に上書きされたとみなして無視。</li>
+        <li>失敗時は変更前のチケットをそのまま <code>replaceIssue</code> で復元し、エラーフラッシュを表示。</li>
+      </ol>
+
+      <h3>レンダリング</h3>
+      <ul class="spec">
+        <li><code>orderedIssues</code> で DFS 順に並べた上で、プロジェクト見出し行を間に挿入 (<code>buildDisplayEntries</code>)。</li>
+        <li>右ペインのチャート行と左ペインのテキスト行は<strong>同じ順序・同じ高さ</strong>で 1:1 対応。</li>
+        <li>横スクロールは右ペイン本体と固定ツールバーで双方向同期。</li>
+        <li>レンダリングは Seed の 300 件規模で問題なし。仮想スクロールは未実装。</li>
+      </ul>
+    </section>
+
+    <!-- 11. I18N -->
+    <section id="i18n">
+      <h2><span class="num">11.</span> 国際化</h2>
+      <p class="lead"><code>config/locales/{ja,en}.yml</code> に最低限のキーのみ収録。JS 側のメッセージは現状ハードコード (日本語 / 英語混在) です。</p>
+      <table>
+        <thead><tr><th>キー</th><th>ja</th><th>en</th></tr></thead>
+        <tbody>
+          <tr><td><code>label_easy_gantt</code></td><td>Easy Gantt</td><td>Easy Gantt</td></tr>
+          <tr><td><code>project_module_easy_gantt</code></td><td>Easy Gantt</td><td>Easy Gantt</td></tr>
+          <tr><td><code>permission_view_easy_gantt</code></td><td>Easy Gantt の閲覧</td><td>View Easy Gantt</td></tr>
+          <tr><td><code>permission_edit_easy_gantt</code></td><td>Easy Gantt の編集</td><td>Edit Easy Gantt</td></tr>
+          <tr><td><code>text_easy_gantt_placeholder</code></td><td>Easy Gantt 画面です。</td><td>This is the Easy Gantt screen.</td></tr>
+        </tbody>
+      </table>
+      <div class="callout callout--warn">
+        新規 UI ラベルを追加するときは両ファイルへ同時追加が前提。JS 側に「作業中」「すべて」「依存関係を追加」など日本語固定文字列が残っているため、多言語化を進める場合はここから着手します。
+      </div>
+    </section>
+
+    <!-- 12. ERRORS -->
+    <section id="errors">
+      <h2><span class="num">12.</span> エラーレスポンス</h2>
+      <table>
+        <thead><tr><th>HTTP</th><th>条件</th><th>ボディ</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="badge badge--err">403</span></td>
+            <td>チケットの所属プロジェクトに対し <code>edit_easy_gantt</code> が無い</td>
+            <td><code>render_403</code> (Redmine 標準) / <code>{"success": false, "errors": ["Not authorized"]}</code> (依存関係 API)</td>
+          </tr>
+          <tr>
+            <td><span class="badge badge--err">404</span></td>
+            <td>削除対象の <code>precedes</code> 関係が存在しない、または不可視</td>
+            <td><code>{"success": false, "errors": ["Not found"]}</code></td>
+          </tr>
+          <tr>
+            <td><span class="badge badge--err">422</span></td>
+            <td><code>start_date &gt; due_date</code> / <code>done_ratio</code> 範囲外 / 親付け替えの循環 / 自己依存 / 標準モデルバリデーションエラー</td>
+            <td><code>{"success": false, "errors": [...]}</code></td>
+          </tr>
+          <tr>
+            <td><span class="badge badge--ok">200</span></td>
+            <td>正常完了</td>
+            <td><code>{"success": true, ...}</code></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>クライアント側のフェイルセーフ</h3>
+      <ul class="spec">
+        <li>ネットワーク失敗 / 非 OK レスポンスは <code>catch</code> でまとめて受け、エラーフラッシュ + バー赤グロー + 旧状態への <code>replaceIssue</code> で復元。</li>
+        <li>同一チケットへの連続編集は <code>saveSeq</code> / <code>progressSaveSeq</code> で順序を保証し、古いレスポンスは破棄。</li>
+        <li>初期ロードに失敗した場合 (<code>fetch</code> が reject) は <code>renderError</code> がメッセージのみを描画。</li>
+      </ul>
+    </section>
+
+    <footer>
+      &copy; redmine_ez_gantt &middot; このドキュメントはコードベースから生成された機能仕様書です。
+    </footer>
+
+  </main>
+
+</div>
+</body>
+</html>
