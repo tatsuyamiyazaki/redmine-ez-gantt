@@ -1,6 +1,7 @@
 class EasyGanttIssuePresenter
-  def initialize(issue)
+  def initialize(issue, editable: nil)
     @issue = issue
+    @editable = editable
   end
 
   def as_json(*)
@@ -16,7 +17,7 @@ class EasyGanttIssuePresenter
       start_date: formatted_date(issue.start_date),
       due_date: formatted_date(issue.due_date),
       done_ratio: issue.done_ratio,
-      editable: User.current.allowed_to?(:edit_easy_gantt, issue.project)
+      editable: editable?
     }
   end
 
@@ -35,5 +36,11 @@ class EasyGanttIssuePresenter
 
   def formatted_date(date)
     date&.iso8601
+  end
+
+  def editable?
+    return @editable unless @editable.nil?
+
+    User.current.allowed_to?(:edit_easy_gantt, issue.project)
   end
 end

@@ -1,22 +1,41 @@
 class EasyGanttController < ApplicationController
+  MAX_DEPENDENCY_PATH_DEPTH = 100
+  MAX_CASCADE_ISSUES = 200
+  MAX_ISSUES = 1_000
+
+  class DependencyGraphTooDeep < StandardError; end
+  class CascadeLimitExceeded < StandardError; end
+  class IssueLimitExceeded < StandardError; end
+
   before_action :find_project_by_project_id
   before_action :authorize, only: [:index, :issues, :relations]
   before_action :find_visible_issue, only: [:update_issue, :update_issue_parent]
   before_action :authorize_issue_update, only: [:update_issue, :update_issue_parent]
 
   def index
-    issues = visible_project_issues
-    @easy_gantt_statuses = IssueStatus.where(id: issues.select(:status_id)).order(:position)
-    @easy_gantt_trackers = Tracker.where(id: issues.select(:tracker_id)).order(:position)
+    issue_status_and_tracker_ids = visible_project_issues.distinct.pluck(:status_id, :tracker_id)
+    status_ids = issue_status_and_tracker_ids.map(&:first).compact.uniq
+    tracker_ids = issue_status_and_tracker_ids.map(&:second).compact.uniq
+
+    @easy_gantt_statuses = IssueStatus.where(id: status_ids).order(:position)
+    @easy_gantt_trackers = Tracker.where(id: tracker_ids).order(:position)
   end
 
   def issues
-    issues = visible_project_issues
-                  .includes(:status, :assigned_to, :tracker, :parent, :project)
-                  .references(:project)
-                  .order('projects.lft, issues.start_date, issues.id')
+    issues = limited_issues_for_gantt
+    editable_by_project_id = editable_by_project_id_for(issues)
 
-    render json: issues.map { |issue| EasyGanttIssuePresenter.new(issue).as_json }
+    render json: issues.map { |issue|
+      EasyGanttIssuePresenter.new(
+        issue,
+        editable: editable_by_project_id[issue.project_id] && issue.attributes_editable?(User.current)
+      ).as_json
+    }
+  rescue IssueLimitExceeded
+    render json: {
+      success: false,
+      errors: ["Too many issues to display. Limit is #{MAX_ISSUES}."]
+    }, status: :unprocessable_entity
   end
 
   def relations
@@ -35,33 +54,41 @@ class EasyGanttController < ApplicationController
 
   def update_issue
     attributes = issue_params
+    unsafe_attributes = unsafe_issue_attributes(@issue, attributes)
+
+    if unsafe_attributes.any?
+      render json: { success: false, errors: ['Not authorized'] }, status: :forbidden
+      return
+    end
+
     parsed_dates = parse_issue_dates(attributes)
     return unless parsed_dates
 
-    start_date = attributes.key?(:start_date) ? parsed_dates[:start_date] : @issue.start_date
-    due_date = attributes.key?(:due_date) ? parsed_dates[:due_date] : @issue.due_date
+    start_date = attributes.key?('start_date') ? parsed_dates[:start_date] : @issue.start_date
+    due_date = attributes.key?('due_date') ? parsed_dates[:due_date] : @issue.due_date
 
     if start_date && due_date && start_date > due_date
       render json: { success: false, errors: ['start_date must be on or before due_date'] }, status: :unprocessable_entity
       return
     end
 
-    if attributes.key?(:done_ratio)
-      done_ratio = parse_done_ratio(attributes[:done_ratio])
+    if attributes.key?('done_ratio')
+      done_ratio = parse_done_ratio(attributes['done_ratio'])
 
       unless done_ratio
         render json: { success: false, errors: ['done_ratio must be an integer between 0 and 100'] }, status: :unprocessable_entity
         return
       end
-
-      @issue.done_ratio = done_ratio
     end
 
-    @issue.start_date = start_date if attributes.key?(:start_date)
-    @issue.due_date = due_date if attributes.key?(:due_date)
+    @issue.init_journal(User.current)
+    @issue.safe_attributes = attributes
 
-    if @issue.save
-      affected = cascade_successors(@issue)
+    affected = []
+    saved = save_issue_with_cascade(@issue, affected)
+    return if performed?
+
+    if saved
       render json: {
         success: true,
         issue: EasyGanttIssuePresenter.new(@issue).as_json,
@@ -73,7 +100,14 @@ class EasyGanttController < ApplicationController
   end
 
   def update_issue_parent
-    parent_issue = find_parent_issue(parent_issue_params[:parent_issue_id])
+    attributes = parent_issue_params
+
+    if unsafe_issue_attributes(@issue, attributes).any?
+      render json: { success: false, errors: ['Not authorized'] }, status: :forbidden
+      return
+    end
+
+    parent_issue = find_parent_issue(attributes['parent_issue_id'])
 
     if parent_issue && !editable_issue?(parent_issue)
       render json: { success: false, errors: ['Not authorized'] }, status: :forbidden
@@ -85,7 +119,8 @@ class EasyGanttController < ApplicationController
       return
     end
 
-    @issue.parent_id = parent_issue&.id
+    @issue.init_journal(User.current)
+    @issue.safe_attributes = attributes
 
     if @issue.save
       render json: { success: true, issue: EasyGanttIssuePresenter.new(@issue).as_json }
@@ -98,7 +133,7 @@ class EasyGanttController < ApplicationController
     from_issue = visible_project_issues.find(params[:from_id])
     to_issue   = visible_project_issues.find(params[:to_id])
 
-    unless editable_issue?(from_issue) && editable_issue?(to_issue)
+    unless editable_relation_issue?(from_issue) && editable_relation_issue?(to_issue)
       render json: { success: false, errors: ['Not authorized'] }, status: :forbidden
       return
     end
@@ -108,20 +143,41 @@ class EasyGanttController < ApplicationController
       return
     end
 
-    if dependency_path_exists?(to_issue.id, from_issue.id)
+    begin
+      circular_dependency = dependency_path_exists?(to_issue.id, from_issue.id)
+    rescue DependencyGraphTooDeep
+      render json: { success: false, errors: ['Dependency graph is too deep'] }, status: :unprocessable_entity
+      return
+    end
+
+    if circular_dependency
       render json: { success: false, errors: ['This relation would create a circular dependency'] }, status: :unprocessable_entity
       return
     end
 
-    relation = IssueRelation.new(
-      issue_from_id: from_issue.id,
-      issue_to_id: to_issue.id,
-      relation_type: IssueRelation::TYPE_PRECEDES,
-      delay: 0
-    )
+    relation = IssueRelation.new
+    relation.issue_from = from_issue
+    relation.safe_attributes = {
+      'relation_type' => IssueRelation::TYPE_PRECEDES,
+      'issue_to_id' => to_issue.id,
+      'delay' => 0
+    }
+    relation.init_journals(User.current)
 
-    if relation.save
-      affected = cascade_successors(from_issue)
+    affected = []
+
+    begin
+      saved = IssueRelation.transaction do
+        relation.save.tap do |relation_saved|
+          affected.concat(cascade_successors(from_issue)) if relation_saved
+        end
+      end
+    rescue CascadeLimitExceeded
+      render json: { success: false, errors: ['Too many dependent issues to update'] }, status: :unprocessable_entity
+      return
+    end
+
+    if saved
       render json: {
         success: true,
         relation: { id: relation.id, from_id: relation.issue_from_id, to_id: relation.issue_to_id, delay: relation.delay.to_i },
@@ -146,11 +202,12 @@ class EasyGanttController < ApplicationController
       return
     end
 
-    unless editable_issue?(relation.issue_from) && editable_issue?(relation.issue_to)
+    unless editable_relation_issue?(relation.issue_from) && editable_relation_issue?(relation.issue_to) && relation.deletable?
       render json: { success: false, errors: ['Not authorized'] }, status: :forbidden
       return
     end
 
+    relation.init_journals(User.current)
     relation.destroy
     render json: { success: true }
   end
@@ -162,7 +219,7 @@ class EasyGanttController < ApplicationController
   end
 
   def visible_project_issues
-    Issue.visible.where(project_id: @project.self_and_descendants.select(:id))
+    Issue.visible.where(project_id: visible_easy_gantt_project_ids)
   end
 
   def authorize_issue_update
@@ -170,11 +227,11 @@ class EasyGanttController < ApplicationController
   end
 
   def issue_params
-    params.require(:issue).permit(:start_date, :due_date, :done_ratio)
+    params.require(:issue).permit(:start_date, :due_date, :done_ratio).to_h
   end
 
   def parent_issue_params
-    params.require(:issue).permit(:parent_issue_id)
+    params.require(:issue).permit(:parent_issue_id).to_h
   end
 
   def find_parent_issue(parent_issue_id)
@@ -203,16 +260,72 @@ class EasyGanttController < ApplicationController
   end
 
   def editable_issue?(issue)
-    issue && User.current.allowed_to?(:edit_easy_gantt, issue.project)
+    issue &&
+      issue.visible?(User.current) &&
+      issue.project.module_enabled?(:easy_gantt) &&
+      User.current.allowed_to?(:view_easy_gantt, issue.project) &&
+      User.current.allowed_to?(:edit_easy_gantt, issue.project) &&
+      issue.attributes_editable?(User.current)
+  end
+
+  def editable_relation_issue?(issue)
+    issue &&
+      issue.visible?(User.current) &&
+      issue.project.module_enabled?(:easy_gantt) &&
+      User.current.allowed_to?(:view_easy_gantt, issue.project) &&
+      User.current.allowed_to?(:edit_easy_gantt, issue.project) &&
+      User.current.allowed_to?(:manage_issue_relations, issue.project)
+  end
+
+  def visible_easy_gantt_project_ids
+    @visible_easy_gantt_project_ids ||= Project
+      .where(Project.allowed_to_condition(User.current, :view_easy_gantt, project: @project, with_subprojects: true))
+      .pluck(:id)
+  end
+
+  def unsafe_issue_attributes(issue, attributes)
+    attributes.keys.map(&:to_s) - issue.safe_attribute_names(User.current)
+  end
+
+  def editable_by_project_id_for(issues)
+    issues.map(&:project).uniq.index_with do |project|
+      project.module_enabled?(:easy_gantt) &&
+        User.current.allowed_to?(:view_easy_gantt, project) &&
+        User.current.allowed_to?(:edit_easy_gantt, project)
+    end.transform_keys(&:id)
+  end
+
+  def limited_issues_for_gantt
+    issues = visible_project_issues
+               .includes(:status, :assigned_to, :tracker, :parent, :project)
+               .references(:project)
+               .order('projects.lft, issues.start_date, issues.id')
+               .limit(MAX_ISSUES + 1)
+               .to_a
+
+    raise IssueLimitExceeded if issues.size > MAX_ISSUES
+
+    issues
+  end
+
+  def save_issue_with_cascade(issue, affected)
+    Issue.transaction do
+      saved = issue.save
+      affected.concat(cascade_successors(issue)) if saved
+      saved
+    end
+  rescue CascadeLimitExceeded
+    render json: { success: false, errors: ['Too many dependent issues to update'] }, status: :unprocessable_entity
+    nil
   end
 
   def parse_issue_dates(attributes)
     dates = {}
 
-    %i[start_date due_date].each do |attribute|
+    %w[start_date due_date].each do |attribute|
       next unless attributes.key?(attribute)
 
-      dates[attribute] = parse_date(attributes[attribute])
+      dates[attribute.to_sym] = parse_date(attributes[attribute])
     rescue ArgumentError
       render json: { success: false, errors: ["#{attribute} must be a valid ISO 8601 date"] }, status: :unprocessable_entity
       return nil
@@ -224,6 +337,7 @@ class EasyGanttController < ApplicationController
   def dependency_path_exists?(from_issue_id, to_issue_id, issue_ids = visible_project_issues.select(:id), visited = Set.new)
     return true if from_issue_id == to_issue_id
     return false if visited.include?(from_issue_id)
+    raise DependencyGraphTooDeep if visited.size >= MAX_DEPENDENCY_PATH_DEPTH
 
     visited.add(from_issue_id)
 
@@ -237,30 +351,49 @@ class EasyGanttController < ApplicationController
   end
 
   def cascade_successors(issue, visited = Set.new)
-    return [] if visited.include?(issue.id)
+    raise CascadeLimitExceeded if visited.size >= MAX_CASCADE_ISSUES
+
     visited.add(issue.id)
-
     affected = []
+    frontier = [issue]
 
-    IssueRelation.where(
-      issue_from_id: issue.id,
-      relation_type: IssueRelation::TYPE_PRECEDES
-    ).each do |relation|
-      successor = visible_project_issues.find_by(id: relation.issue_to_id)
-      next unless editable_issue?(successor)
-      next unless successor.start_date && successor.due_date && issue.due_date
+    until frontier.empty?
+      relation_rows = IssueRelation.where(
+        issue_from_id: frontier.map(&:id),
+        relation_type: IssueRelation::TYPE_PRECEDES
+      ).pluck(:issue_from_id, :issue_to_id, :delay)
+      break if relation_rows.empty?
 
-      delay = relation.delay.to_i
-      min_start = issue.due_date + delay + 1
-      next if successor.start_date >= min_start
+      successors = visible_project_issues
+                     .includes(:status, :assigned_to, :tracker, :parent, :project)
+                     .where(id: relation_rows.map { |(_, issue_to_id, _)| issue_to_id }.uniq - visited.to_a)
+                     .index_by(&:id)
+      relations_by_from_id = relation_rows.group_by { |(issue_from_id, _, _)| issue_from_id }
+      next_frontier = []
 
-      duration = (successor.due_date - successor.start_date).to_i
-      successor.start_date = min_start
-      successor.due_date = min_start + duration
-      next unless successor.save
+      frontier.each do |predecessor|
+        Array(relations_by_from_id[predecessor.id]).each do |(_, successor_id, delay)|
+          successor = successors[successor_id]
+          next unless editable_issue?(successor)
+          next unless successor.start_date && successor.due_date && predecessor.due_date
 
-      affected << successor
-      affected.concat(cascade_successors(successor, visited))
+          min_start = predecessor.due_date + delay.to_i + 1
+          next if successor.start_date >= min_start
+          raise CascadeLimitExceeded if affected.size >= MAX_CASCADE_ISSUES
+
+          duration = (successor.due_date - successor.start_date).to_i
+          successor.init_journal(User.current)
+          successor.start_date = min_start
+          successor.due_date = min_start + duration
+          next unless successor.save
+
+          visited.add(successor.id)
+          affected << successor
+          next_frontier << successor
+        end
+      end
+
+      frontier = next_frontier
     end
 
     affected
