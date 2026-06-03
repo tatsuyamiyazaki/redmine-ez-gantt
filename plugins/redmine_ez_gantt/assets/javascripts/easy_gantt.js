@@ -273,6 +273,17 @@
 
   function showFlashMessage(type, message) {
     var element = state.root && state.root.querySelector(".easy-gantt-flash");
+
+    // 情報/成功系の操作ログは表示しない。失敗時のフィードバックとしてエラーのみ通知する。
+    if (type !== "error") {
+      state.flash = null;
+      if (element) {
+        element.className = "easy-gantt-flash";
+        element.textContent = "";
+      }
+      return;
+    }
+
     state.flash = {
       type: type,
       message: message || ""
@@ -640,7 +651,12 @@
   function applyBarGeometry(bar, issue, range) {
     var geometry = barGeometry(issue, range);
     var progress = barDoneRatio(issue);
+    var assigneeName = namedValue(issue.assigned_to);
     var label = "#" + issue.id + " " + issue.subject + " (" + issue.start_date + " - " + issue.due_date + ", " + progress + "%)";
+
+    if (assigneeName) {
+      label += " - " + assigneeName;
+    }
     var progressFill;
     var progressText;
 
@@ -1042,6 +1058,7 @@
     var id = createElement("span", "easy-gantt__issue-id", "#" + issue.id);
     var subject = createElement("a", "easy-gantt__issue-subject", issue.subject);
     var tracker = createElement("span", "easy-gantt__issue-tracker", namedValue(issue.tracker));
+    var assignee = createElement("span", "easy-gantt__issue-assignee", namedValue(issue.assigned_to));
 
     subject.href = "/issues/" + issue.id;
     subject.addEventListener("click", function (event) {
@@ -1090,6 +1107,9 @@
     title.appendChild(subject);
     if (tracker.textContent) {
       title.appendChild(tracker);
+    }
+    if (assignee.textContent) {
+      title.appendChild(assignee);
     }
 
     progressInput.type = "number";

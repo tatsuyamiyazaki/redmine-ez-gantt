@@ -494,6 +494,17 @@
   flex: 0 0 auto;
 }
 
+.easy-gantt__issue-assignee {
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1e40af;
+  padding: 1px 6px;
+  font-size: 11px;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .easy-gantt__project-row {
   display: flex;
   align-items: center;
