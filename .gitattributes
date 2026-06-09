@@ -1,0 +1,17 @@
+# リポジトリ内のテキストは原則 git に自動正規化させる
+* text=auto
+
+# Linux コンテナ内で実行・bind mount されるファイルは必ず LF を強制する。
+# Windows で checkout しても CRLF にしない（CRLF だと entrypoint.sh が
+# `$'\r': command not found` 等で起動失敗するため)。
+*.sh   text eol=lf
+*.rb   text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.erb  text eol=lf
+Dockerfile text eol=lf
+entrypoint.sh text eol=lf
+
+# プラグインのフロントエンド資産も LF に揃える
+*.js  text eol=lf
+*.css text eol=lf
