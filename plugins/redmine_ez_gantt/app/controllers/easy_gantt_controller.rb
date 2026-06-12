@@ -8,7 +8,9 @@ class EasyGanttController < ApplicationController
   class IssueLimitExceeded < StandardError; end
 
   before_action :find_project_by_project_id
-  before_action :authorize, only: [:index, :issues, :relations]
+  before_action :authorize, only: [:index, :issues, :relations, :create_relation, :delete_relation]
+  # update_issue / update_issue_parent はプロジェクトをまたぐチケット編集に対応するため、
+  # @project への authorize ではなくチケット側プロジェクトに対する authorize_issue_update で認可する。
   before_action :find_visible_issue, only: [:update_issue, :update_issue_parent]
   before_action :authorize_issue_update, only: [:update_issue, :update_issue_parent]
 
@@ -91,8 +93,8 @@ class EasyGanttController < ApplicationController
     if saved
       render json: {
         success: true,
-        issue: EasyGanttIssuePresenter.new(@issue).as_json,
-        affected_issues: affected.map { |i| EasyGanttIssuePresenter.new(i).as_json }
+        issue: EasyGanttIssuePresenter.new(@issue, editable: editable_issue?(@issue)).as_json,
+        affected_issues: affected.map { |i| EasyGanttIssuePresenter.new(i, editable: editable_issue?(i)).as_json }
       }
     else
       render json: { success: false, errors: @issue.errors.full_messages }, status: :unprocessable_entity
@@ -123,7 +125,7 @@ class EasyGanttController < ApplicationController
     @issue.safe_attributes = attributes
 
     if @issue.save
-      render json: { success: true, issue: EasyGanttIssuePresenter.new(@issue).as_json }
+      render json: { success: true, issue: EasyGanttIssuePresenter.new(@issue, editable: editable_issue?(@issue)).as_json }
     else
       render json: { success: false, errors: @issue.errors.full_messages }, status: :unprocessable_entity
     end
@@ -181,7 +183,7 @@ class EasyGanttController < ApplicationController
       render json: {
         success: true,
         relation: { id: relation.id, from_id: relation.issue_from_id, to_id: relation.issue_to_id, delay: relation.delay.to_i },
-        affected_issues: affected.map { |i| EasyGanttIssuePresenter.new(i).as_json }
+        affected_issues: affected.map { |i| EasyGanttIssuePresenter.new(i, editable: editable_issue?(i)).as_json }
       }
     else
       render json: { success: false, errors: relation.errors.full_messages }, status: :unprocessable_entity
@@ -334,20 +336,24 @@ class EasyGanttController < ApplicationController
     dates
   end
 
-  def dependency_path_exists?(from_issue_id, to_issue_id, issue_ids = visible_project_issues.select(:id), visited = Set.new)
-    return true if from_issue_id == to_issue_id
-    return false if visited.include?(from_issue_id)
-    raise DependencyGraphTooDeep if visited.size >= MAX_DEPENDENCY_PATH_DEPTH
+  def dependency_path_exists?(from_issue_id, to_issue_id, issue_ids = visible_project_issues.select(:id))
+    visited = Set.new
+    frontier = [from_issue_id]
 
-    visited.add(from_issue_id)
+    until frontier.empty?
+      return true if frontier.include?(to_issue_id)
 
-    IssueRelation.where(
-      issue_from_id: from_issue_id,
-      issue_to_id: issue_ids,
-      relation_type: IssueRelation::TYPE_PRECEDES
-    ).pluck(:issue_to_id).any? do |next_issue_id|
-      dependency_path_exists?(next_issue_id, to_issue_id, issue_ids, visited)
+      frontier.each { |issue_id| visited.add(issue_id) }
+      raise DependencyGraphTooDeep if visited.size >= MAX_DEPENDENCY_PATH_DEPTH
+
+      frontier = IssueRelation.where(
+        issue_from_id: frontier,
+        issue_to_id: issue_ids,
+        relation_type: IssueRelation::TYPE_PRECEDES
+      ).distinct.pluck(:issue_to_id).reject { |issue_id| visited.include?(issue_id) }
     end
+
+    false
   end
 
   def cascade_successors(issue, visited = Set.new)
@@ -406,11 +412,11 @@ class EasyGanttController < ApplicationController
   end
 
   def parse_done_ratio(value)
-    ratio = Integer(value)
+    return nil unless value.to_s.match?(/\A\d+\z/)
+
+    ratio = value.to_s.to_i
     return nil unless ratio.between?(0, 100)
 
     ratio
-  rescue ArgumentError, TypeError
-    nil
   end
 end

@@ -148,6 +148,82 @@ class EasyGanttControllerTest < Redmine::ControllerTest
     assert_response :forbidden
   end
 
+  def test_create_relation_requires_edit_easy_gantt_permission
+    replace_member_roles!(
+      User.find(2),
+      @project,
+      role_with_permissions(
+        :view_project,
+        :view_issues,
+        :edit_issues,
+        :manage_issue_relations,
+        :view_easy_gantt
+      )
+    )
+
+    assert_no_difference 'IssueRelation.count' do
+      post(
+        :create_relation,
+        params: {
+          project_id: @project.identifier,
+          from_id: @issue.id,
+          to_id: Issue.find(2).id
+        }
+      )
+    end
+
+    assert_response :forbidden
+    # authorize フィルタで止まることを確認する (アクション本体の手動チェックは JSON で 403 を返す)
+    assert_not_equal 'application/json', response.media_type
+  end
+
+  def test_delete_relation_requires_edit_easy_gantt_permission
+    replace_member_roles!(
+      User.find(2),
+      @project,
+      role_with_permissions(
+        :view_project,
+        :view_issues,
+        :edit_issues,
+        :manage_issue_relations,
+        :view_easy_gantt
+      )
+    )
+
+    predecessor = Issue.generate!(
+      project: @project,
+      tracker: @issue.tracker,
+      start_date: Date.iso8601('2026-05-01'),
+      due_date: Date.iso8601('2026-05-01')
+    )
+    successor = Issue.generate!(
+      project: @project,
+      tracker: @issue.tracker,
+      start_date: Date.iso8601('2026-05-05'),
+      due_date: Date.iso8601('2026-05-06')
+    )
+    relation = IssueRelation.create!(
+      issue_from: predecessor,
+      issue_to: successor,
+      relation_type: IssueRelation::TYPE_PRECEDES,
+      delay: 0
+    )
+
+    assert_no_difference 'IssueRelation.count' do
+      delete(
+        :delete_relation,
+        params: {
+          project_id: @project.identifier,
+          id: relation.id
+        }
+      )
+    end
+
+    assert_response :forbidden
+    # authorize フィルタで止まることを確認する (アクション本体の手動チェックは JSON で 403 を返す)
+    assert_not_equal 'application/json', response.media_type
+  end
+
   def test_issues_excludes_descendant_projects_without_easy_gantt_enabled
     role = role_with_permissions(
       :view_project,

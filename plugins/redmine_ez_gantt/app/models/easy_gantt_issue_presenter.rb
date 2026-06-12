@@ -38,9 +38,15 @@ class EasyGanttIssuePresenter
     date&.iso8601
   end
 
+  # フォールバックは EasyGanttController#editable_issue? と同じ条件を保つこと。
+  # 呼び出し側が判定済みの場合は editable: で明示的に渡すのが基本。
   def editable?
     return @editable unless @editable.nil?
 
-    User.current.allowed_to?(:edit_easy_gantt, issue.project)
+    issue.visible?(User.current) &&
+      issue.project.module_enabled?(:easy_gantt) &&
+      User.current.allowed_to?(:view_easy_gantt, issue.project) &&
+      User.current.allowed_to?(:edit_easy_gantt, issue.project) &&
+      issue.attributes_editable?(User.current)
   end
 end
